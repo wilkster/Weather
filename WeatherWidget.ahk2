@@ -5,20 +5,13 @@
 ;@Ahk2Exe-SetCopyright Copyright (c) 2026 Tom Wilkason
 ;@Ahk2Exe-SetOrigFilename Weather.exe
 ;@Ahk2Exe-SetMainIcon Weather.ico
-
+#SingleInstance Off
 #Requires AutoHotkey v2.0
 /*
-TODO - settings for location
-     - Lookup lat/lon and just use names, then settings for various locations on RMB
-     x Use Ini File with LOCn=Niwot, CO for difference locations
-     x RMB shows the locations on the widget with checkbox next to each one
-     - Save last Selected Location
-       
-     - seems to stay on all desktops, this is desired
-     x don't update if locked and refresh when coming out of sleep (after a short delay)
-     - https://github.com/Makin-Things/weather-icons (SVG, some are animated)
-     x Night time icons
-     x Click tray to toggle widget visibility
+TODO
+- seems to stay on all desktops, this is desired
+x don't update if locked and refresh when coming out of sleep (after a short delay)
+- https://github.com/Makin-Things/weather-icons (SVG, some are animated)
 */
 class Weather {
    static Lat      := 34.0447
@@ -107,28 +100,24 @@ class Weather {
       99, "Thunderstorm"        ;"Thunderstorm, hail"
    )
 
+   /**
+    * Called during program startup
+    */
    static Init() {
-      locations := Array()
+      this.Menu := Menu()
       this.iniFile := A_ScriptDir "\WeatherWidget.ini"
       If (FileExist(this.iniFile)) {
-         Loop 10 {
-            If (loc := IniRead(this.iniFile, "Locations", "Loc" A_Index, "")) {
-               locations.push(loc)
-            } Else
-               Break
-         }
          ; Set default locations
          this.Name := IniRead(this.iniFile, "Default", "Loc", "Los Angeles, CA")
          If (obj := this.GeocodeName(this.Name)) {
             this.Lat := obj.lat
-            this.Long := obj.lon
+            this.Lon := obj.lon
          }
       }
-      sf:= A_ScreenDPI/96
+      ; Build the GUI, should be DPI aware
       g := this.Gui := Gui("-Caption +ToolWindow +Border +DPIScale")
       g.BackColor := "1E1E2E"
       g.MarginX := 10, g.MarginY := 8
-
       g.SetFont("s9 cA6ADC8", "Segoe UI")
       this.Ctl["loc"] := g.AddText("w240", this.Name)
       g.SetFont("s28 cFFFFFF Bold", "Segoe UI")
@@ -144,41 +133,86 @@ class Weather {
       this.Ctl["hourly"] := g.AddText("w240 r8", "")
       g.SetFont("s8 c6C7086", "Segoe UI")
       this.Ctl["updated"] := g.AddText("w240", "")
-
       this.Ctl["Icon"] := g.AddPicture("H96 W96 X150 Y10" )
+
+      ; Pretty up the window
       this.Round11Corners(g.hWnd)
-      this.Menu := Menu()
-      this.Menu.Add("Refresh now", ObjBindMethod(this, "Update"))
-      If (locations.Length) {
-         this.Menu.add()
-         For idx, loc in locations {
-            this.menu.add(loc, this.setlocation.bind(this))
-         }
-         this.Menu.add()
-      }
-      this.Menu.Add("Edit Locations File", (*) => Run(this.iniFile))  ; Creates a new menu item.
-      this.Menu.Add("Exit", (*) => ExitApp())
-      OnMessage(0x201, ObjBindMethod(this, "Drag"))
-      OnMessage(0x404, this.TrayMessage.Bind(this))
-      g.OnEvent("ContextMenu", (*) => this.Menu.Show())
       this.Shadow()
+
+      OnMessage(0x201, this.Drag.bind(this))
+      OnMessage(0x404, this.TrayMessage.Bind(this))
+
+      g.OnEvent("ContextMenu", (*) => this.ShowRMB())
+
       X := IniRead(this.iniFile,"Default","X",0)
       Y := IniRead(this.iniFile,"Default","Y",0)
       g.Show("NoActivate x" X " y" Y " W260")
 
       this.Update()
+      ; Auto Refresh
       this.repeat := this.update.bind(this)
       SetTimer(this.repeat, this.Interval)
+
       OnExit this.SavePosition.bind(this)
+   }
+   /**
+    * Build/Rebuild/Show the RMB menu
+    */
+   Static ShowRMB() {
+      this.BuildRMB()
+      this.Menu.Show()
+   }
+   /**
+    * Rebuild the RMB menu before launching it in case the settings file changed
+    */
+   Static BuildRMB() {
+      this.Menu.Delete
+      this.Menu := Menu()
+
+      If (FileExist(this.iniFile)) {
+         ; Up to 15 locations
+         Loop 15 {
+            If (loc := IniRead(this.iniFile, "Locations", "Loc" A_Index, "")) {
+               this.menu.add(loc, this.setlocation.bind(this))
+               if (loc = this.Name)
+                  this.menu.Check(loc)
+            } Else
+               Break
+         }         
+      } else
+         this.Menu.Add("Refresh now", this.Update.bind(this))
+      this.Menu.add()
+      this.Menu.Add("Edit Locations File", (*) => Run(this.iniFile))  ; Creates a new menu item.
+      this.Menu.Add("Exit", (*) => ExitApp())
+   }
+   
+   /**
+    * Callback when user selects a new location
+    * @param place Name of location
+    * @param ItemPos menu position
+    * @param MyMenu menu handle
+    */
+   Static SetLocation(place, ItemPos, MyMenu) {
+      If (obj := this.GeocodeName(place)) {
+         this.Lat  := obj.lat
+         this.Lon  := obj.lon
+         this.name := place
+         this.Update()
+         IniWrite(place, this.iniFile, "Default", "Loc")
+      }
    }
    /**
     * Save Gui location on exit
     */
    static SavePosition(ExitReason, ExitCode) {
-      this.gui.GetPos(&X,&Y)
+      this.Gui.GetPos(&X, &Y)
+      IniWrite(This.Name,this.iniFile,"Default","Loc")
       IniWrite(X,this.iniFile,"Default","X")
       IniWrite(Y,this.iniFile,"Default","Y")
    }
+   /**
+    * Drag the GUI on a message since we don't have a caption
+    */
    static Drag(wParam, lParam, msg, hwnd) {
       if (hwnd = this.Gui.Hwnd)
          PostMessage(0xA1, 2, , , this.Gui)   ; WM_NCLBUTTONDOWN, HTCAPTION
@@ -269,7 +303,7 @@ class Weather {
          }
          if (FileExist(Icon))
             TraySetIcon(Icon)
-         A_IconTip := (Round(this.Value(cur, "temperature_2m")) . "° - " . this.Codes[code])
+         A_IconTip := this.Name "`n" (Round(this.Value(cur, "temperature_2m")) . "° - " . this.Codes[code])
          this.Ctl["Icon"].value := Icon
       }
    }
@@ -323,15 +357,6 @@ class Weather {
    }
    Static PruneMemory() => DllCall("psapi\EmptyWorkingSet", "ptr", -1)
 
-   Static SetLocation(place, ItemPos, MyMenu) {
-      If (obj := this.GeocodeName(place)) {
-         this.Lat  := obj.lat
-         this.Long := obj.lon
-         this.name := place
-         this.Update()
-         IniWrite(place, this.iniFile, "Default", "Loc")
-      }
-   }
    /**
     * Return an object with the lat/long of some place
     * @param place Name of location
