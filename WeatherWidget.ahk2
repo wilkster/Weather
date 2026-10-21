@@ -1,0 +1,434 @@
+;@Ahk2Exe-SetName Weather
+;@Ahk2Exe-SetDescription Weather App
+;@Ahk2Exe-Set Comments, Weather
+;@Ahk2Exe-SetVersion 2026.10.12
+;@Ahk2Exe-SetCopyright Copyright (c) 2026 Tom Wilkason
+;@Ahk2Exe-SetOrigFilename Weather.exe
+;@Ahk2Exe-SetMainIcon Weather.ico
+
+#Requires AutoHotkey v2.0
+/*
+TODO - settings for location
+     - Lookup lat/lon and just use names, then settings for various locations on RMB
+     x Use Ini File with LOCn=Niwot, CO for difference locations
+     x RMB shows the locations on the widget with checkbox next to each one
+     - Save last Selected Location
+       
+     - seems to stay on all desktops, this is desired
+     x don't update if locked and refresh when coming out of sleep (after a short delay)
+     - https://github.com/Makin-Things/weather-icons (SVG, some are animated)
+     x Night time icons
+     x Click tray to toggle widget visibility
+*/
+class Weather {
+   static Lat      := 34.0447
+   static Lon      := -118.2493
+   static Name     := "Los Angeles, CA"
+   static Interval := 30 * 60 * 1000   ; ms
+   static Gui      := ""
+   static Ctl      := Map()
+   static Menu     := ""
+   /*
+      WMO Weather Codes Reference
+      Code	      Description
+      0	         Clear sky
+      1, 2, 3	   Mainly clear, partly cloudy, and overcast
+      45, 48	   Fog and depositing rime fog
+      51, 53, 55	Drizzle: Light, moderate, and dense intensity
+      56, 57	   Freezing Drizzle: Light and dense intensity
+      61, 63, 65	Rain: Slight, moderate and heavy intensity
+      66, 67	   Freezing Rain: Light and heavy intensity
+      71, 73, 75	Snow fall: Slight, moderate, and heavy intensity
+      77	         Snow grains
+      80, 81, 82	Rain showers: Slight, moderate, and violent
+      85, 86	   Snow showers slight and heavy
+      95	         Thunderstorm: Slight or moderate
+      96, 99	   Thunderstorm with slight and heavy hail
+
+   */
+   static Codes    := Map(
+      0,  "Clear",
+      1,  "Mainly clear",
+      2,  "Partly cloudy",
+      3,  "Overcast",
+      45, "Fog",
+      48, "Rime fog",
+      51, "Light drizzle",
+      53, "Drizzle",
+      55, "Heavy drizzle",
+      56, "Light Freezing drizzle",
+      57, "Dense Freezing drizzle",
+      61, "Light rain",
+      63, "Rain",
+      65, "Heavy rain",
+      66, "Light Freezing rain",
+      67, "Heavy Freezing rain",
+      71, "Light snow",
+      73, "Snow",
+      75, "Heavy snow",
+      77, "Snow grains",
+      80, "Light showers",
+      81, "Showers",
+      82, "Heavy showers",
+      85, "Snow showers",
+      86, "Heavy snow showers",
+      95, "Thunderstorm",
+      96, "Thunderstorm, hail",
+      99, "Intese Thunderstorm, hail"
+   )
+   Static Icons := Map(
+      0, "Clear",               ;"Clear",
+      1, "Light Clouds",        ;"Mainly clear",
+      2, "Partly Cloudy",       ;"Partly cloudy",
+      3, "Overcast",            ;"Overcast",
+      45, "Fog",                ;"Fog",
+      48, "Fog",                ;"Rime fog",
+      51, "Drizzle",            ;"Light drizzle",
+      53, "Drizzle",            ;"Drizzle",
+      55, "Drizzle",            ;"Heavy drizzle",
+      56, "Freezing drizzle",   ;"Freezing drizzle",
+      57, "Freezing drizzle",   ;"Freezing drizzle",
+      61, "Light Showers",      ;"Light rain",
+      63, "Rain",               ;"Rain",
+      65, "Rain",               ;"Heavy rain",
+      66, "Freezing rain",      ;"Freezing rain",
+      67, "Freezing rain",      ;"Freezing rain",
+      71, "Light Snow",         ;"Light snow",
+      73, "Snow",               ;"Snow",
+      75, "Heavy Snow",         ;"Heavy snow",
+      77, "Snow",               ;"Snow grains",
+      80, "Light Showers",      ;"Light showers",
+      81, "Light Showers",      ;"Showers",
+      82, "Rain",               ;"Heavy showers",
+      85, "Snow",               ;"Snow showers",
+      86, "Snow",               ;"Heavy snow showers",
+      95, "Thunderstorm",       ;"Thunderstorm",
+      96, "Thunderstorm",       ;"Thunderstorm, hail",
+      99, "Thunderstorm"        ;"Thunderstorm, hail"
+   )
+
+   static Init() {
+      locations := Array()
+      this.iniFile := A_ScriptDir "\WeatherWidget.ini"
+      If (FileExist(this.iniFile)) {
+         Loop 10 {
+            If (loc := IniRead(this.iniFile, "Locations", "Loc" A_Index, "")) {
+               locations.push(loc)
+            } Else
+               Break
+         }
+         ; Set default locations
+         this.Name := IniRead(this.iniFile, "Default", "Loc", "Los Angeles, CA")
+         If (obj := this.GeocodeName(this.Name)) {
+            this.Lat := obj.lat
+            this.Long := obj.lon
+         }
+      }
+      sf:= A_ScreenDPI/96
+      g := this.Gui := Gui("-Caption +ToolWindow +Border +DPIScale")
+      g.BackColor := "1E1E2E"
+      g.MarginX := 10, g.MarginY := 8
+
+      g.SetFont("s9 cA6ADC8", "Segoe UI")
+      this.Ctl["loc"] := g.AddText("w240", this.Name)
+      g.SetFont("s28 cFFFFFF Bold", "Segoe UI")
+      this.Ctl["temp"] := g.AddText("w240 y+0", "--°")
+      g.SetFont("s11 cCDD6F4 Norm", "Segoe UI")
+      this.Ctl["cond"] := g.AddText("w240 y+0", "Loading...")
+      g.SetFont("s9 cA6ADC8", "Segoe UI")
+      this.Ctl["detail"] := g.AddText("w240", "")
+      g.SetFont("s10 cF9E2AF", "Segoe UI")
+      this.Ctl["day"] := g.AddText("w240 y+10", "")
+      this.Ctl["tom"] := g.AddText("w240 y+2", "")
+      g.SetFont("s9 cCDD6F4", "Consolas")
+      this.Ctl["hourly"] := g.AddText("w240 r8", "")
+      g.SetFont("s8 c6C7086", "Segoe UI")
+      this.Ctl["updated"] := g.AddText("w240", "")
+
+      this.Ctl["Icon"] := g.AddPicture("H96 W96 X150 Y10" )
+      this.Round11Corners(g.hWnd)
+      this.Menu := Menu()
+      this.Menu.Add("Refresh now", ObjBindMethod(this, "Update"))
+      If (locations.Length) {
+         this.Menu.add()
+         For idx, loc in locations {
+            this.menu.add(loc, this.setlocation.bind(this))
+         }
+         this.Menu.add()
+      }
+      this.Menu.Add("Edit Locations File", (*) => Run(this.iniFile))  ; Creates a new menu item.
+      this.Menu.Add("Exit", (*) => ExitApp())
+      OnMessage(0x201, ObjBindMethod(this, "Drag"))
+      OnMessage(0x404, this.TrayMessage.Bind(this))
+      g.OnEvent("ContextMenu", (*) => this.Menu.Show())
+      this.Shadow()
+      X := IniRead(this.iniFile,"Default","X",0)
+      Y := IniRead(this.iniFile,"Default","Y",0)
+      g.Show("NoActivate x" X " y" Y " W260")
+
+      this.Update()
+      this.repeat := this.update.bind(this)
+      SetTimer(this.repeat, this.Interval)
+      OnExit this.SavePosition.bind(this)
+   }
+   /**
+    * Save Gui location on exit
+    */
+   static SavePosition(ExitReason, ExitCode) {
+      this.gui.GetPos(&X,&Y)
+      IniWrite(X,this.iniFile,"Default","X")
+      IniWrite(Y,this.iniFile,"Default","Y")
+   }
+   static Drag(wParam, lParam, msg, hwnd) {
+      if (hwnd = this.Gui.Hwnd)
+         PostMessage(0xA1, 2, , , this.Gui)   ; WM_NCLBUTTONDOWN, HTCAPTION
+         
+   }
+
+   /**
+    * Query the JSON Weather data
+    */
+   static Update(*) {
+      url := "https://api.open-meteo.com/v1/forecast?latitude=" this.Lat "&longitude=" this.Lon
+         . "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,is_day"
+         . "&hourly=temperature_2m,precipitation_probability,wind_speed_10m"
+         . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+         . "&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=2&timezone=auto"
+      try {
+         http := ComObject("WinHttp.WinHttpRequest.5.1")
+         http.SetTimeouts(5000, 5000, 10000, 10000)
+         http.Open("GET", url, false)
+         http.Send()
+         if (http.Status != 200)
+            throw Error("HTTP " http.Status)
+         this.Render(http.ResponseText)
+         this.PruneMemory()
+      } catch as e {
+         this.Ctl["updated"].Text := "Update failed " FormatTime(, "h:mm tt") " (" e.Message ")"
+      }
+   }
+
+   /**
+    * Render the weather data based on JSON data
+    * @param json Query Results
+    */
+   static Render(json) {
+      this.Ctl["loc"].Text := this.Name
+      cur := this.Section(json, "current")
+      day := this.Section(json, "daily")
+      hrs := this.Section(json, "hourly")
+
+      code := Integer(this.Value(cur, "weather_code"))
+      isDay := Integer(this.Value(cur, "is_day"))
+      this.Ctl["temp"].Text := Round(this.Value(cur, "temperature_2m")) "°"
+      this.Ctl["cond"].Text := this.Codes.Get(code, "Code " code)
+      this.Ctl["detail"].Text := "Feels " Round(this.Value(cur, "apparent_temperature")) "°"
+         . "   Humidity " Round(this.Value(cur, "relative_humidity_2m")) "%"
+         . "   Wind " Round(this.Value(cur, "wind_speed_10m")) " mph"
+      ; Today
+      hi := Round(this.List(day, "temperature_2m_max")[1])
+      lo := Round(this.List(day, "temperature_2m_min")[1])
+      pop := this.List(day, "precipitation_probability_max")[1]
+      ; TODO - Could create two text entries to make sure they are aligned for today and tomorrow
+      this.Ctl["day"].Text := "Today         H " hi "°  L " lo "°  Precip " (IsNumber(pop) ? pop : "--") "%"
+      ; Tomorrow
+      hi := Round(this.List(day, "temperature_2m_max")[2])
+      lo := Round(this.List(day, "temperature_2m_min")[2])
+      pop := this.List(day, "precipitation_probability_max")[2]
+      this.Ctl["tom"].Text := "Tomorrow  H " hi "°  L " lo "°  Precip " (IsNumber(pop) ? pop : "--") "%"
+
+      ; Hourly slots every 3 hours for the rest of the day
+      RegExMatch(cur, '"time":"[^T]+T(\d+)', &m)
+      temps := this.List(hrs, "temperature_2m")
+      pops  := this.List(hrs, "precipitation_probability")
+      winds := this.List(hrs, "wind_speed_10m")
+      out   := ""
+      h := Integer(m[1]) + 1
+      ; Build the 3 hours forecast for the next 
+      while (A_Index <= 8 && h < temps.Length) {
+         t := temps[h + 1]
+         p := pops[h + 1]
+         w := winds[h + 1]
+         out .= this.Pad(this.Hour12(h), 6)
+            . this.Pad(IsNumber(t) ? Round(t) "°" : "--", 5)
+            . this.Pad(IsNumber(p) ? p "%" : "--", 5)
+            . this.Pad(IsNumber(w) ? Round(w) " mph" : "--", 7) "`n"
+         h += 3
+      }
+      this.Ctl["hourly"].Text := RTrim(out, "`n")
+      this.Ctl["updated"].Text := "Updated " FormatTime(, "h:mm tt")
+      ; Added for tray and icons
+      If (this.Icons.has(code)) {
+         Icon := A_ScriptDir . "\" . this.Icons[code] . ".ico"
+         ; Night time has some adjustments
+         If (NOT isDay) {
+            AltIcon := A_ScriptDir . "\Night " . this.Icons[code] . ".ico"
+            if (FileExist(AltIcon))
+               Icon := AltIcon
+            this.Gui.BackColor := isDay ? "1E1E2E" : "11111B"
+         }
+         if (FileExist(Icon))
+            TraySetIcon(Icon)
+         A_IconTip := (Round(this.Value(cur, "temperature_2m")) . "° - " . this.Codes[code])
+         this.Ctl["Icon"].value := Icon
+      }
+   }
+
+   static Section(json, name) => RegExMatch(json, '"' name '":\{([^}]*)\}', &m) ? m[1] : ""
+   static Value(sec, key) => RegExMatch(sec, '"' key '":(-?[\d.]+)', &m) ? m[1] : ""
+   static List(sec, key) => RegExMatch(sec, '"' key '":\[([^\]]*)\]', &m) ? StrSplit(m[1], ",") : []
+
+   static Hour12(h) => ((h := Mod(h, 24)) = 0 ? 12 : h > 12 ? h - 12 : h) (h < 12 ? " AM" : " PM")
+
+   static Pad(s, n) {
+      while (StrLen(s) < n)
+         s := " " s
+      return s
+   }
+   ;----------------------------------------------------------------------------
+   ; Round the corners of the GUI for windows 11, ignored on Windows 10
+   ; Also draws a rounded border
+   ; Needed since we don't have a caption
+   ; This value is supported starting with Windows 11 Build 22000
+   ;----------------------------------------------------------------------------
+   Static Round11Corners(hWnd, how := 2) {
+      howRound := how
+      ; round corners on windows 11, ignored by windows 10
+      ; DWMWA_WINDOW_CORNER_PREFERENCE = 33
+      ; DWMWCP_ROUND=2, 4 = size of int
+      DllCall("dwmapi\DwmSetWindowAttribute"
+         , "Ptr", hWnd
+         , "UInt", DWMWA_WINDOW_CORNER_PREFERENCE := 33
+         , "Int*", &howRound
+         , "UInt", 4)
+
+   }   
+   Static IsWindowVisible(hwndTry) => DllCall("User32.dll\IsWindowVisible", "Ptr", hwndTry)
+
+   Static TrayMessage(wParam, lParam, uMsg, hWnd) {
+      ; debug(hex(lParam))
+      Switch lParam {
+         Case 0x201:   ; user left-clicked tray icon
+            ; Send "#{Tab}"
+         Case 0x202:   ; user left-clicked tray icon
+            if (this.IsWindowVisible(this.Gui.hWnd))
+               this.Gui.hide()
+            else
+               this.Gui.show()
+         Case 0x203:   ; user double left-clicked tray icon
+         Case 0x204:   ; user right-clicked tray icon
+         Case 0x208:   ; user middle-clicked tray icon
+         Default:
+      }
+   }
+   Static PruneMemory() => DllCall("psapi\EmptyWorkingSet", "ptr", -1)
+
+   Static SetLocation(place, ItemPos, MyMenu) {
+      If (obj := this.GeocodeName(place)) {
+         this.Lat  := obj.lat
+         this.Long := obj.lon
+         this.name := place
+         this.Update()
+         IniWrite(place, this.iniFile, "Default", "Loc")
+      }
+   }
+   /**
+    * Return an object with the lat/long of some place
+    * @param place Name of location
+    * @returns {Integer | Object}  n.lat, n.lon, n.name
+    */
+   Static GeocodeName(place) {
+      url := "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=" UriEncode(place)
+      try {
+         http := ComObject("WinHttp.WinHttpRequest.5.1")
+         http.Open("GET", url, false)
+         http.SetRequestHeader("User-Agent", "AHK2-GeoLookup/1.0")   ; required by Nominatim
+         http.Send()
+         txt := http.ResponseText
+      } catch
+         return false
+
+      if !RegExMatch(txt, '"lat":"(-?[\d.]+)"', &mLat)
+      || !RegExMatch(txt, '"lon":"(-?[\d.]+)"', &mLon)
+         return false   ; empty result "[]"
+
+      RegExMatch(txt, '"display_name":"((?:[^"\\]|\\.)*)"', &mName)
+      return {lat: Number(mLat[1]), lon: Number(mLon[1]), name: mName ? mName[1] : place}
+      
+      UriEncode(s) {
+         n := StrPut(s, "UTF-8") - 1
+         buf := Buffer(n + 1)
+         StrPut(s, buf, "UTF-8")
+         out := ""
+         Loop n {
+            b := NumGet(buf, A_Index - 1, "UChar")
+            if (b >= 48 && b <= 57) || (b >= 65 && b <= 90) || (b >= 97 && b <= 122)
+            || b = 45 || b = 46 || b = 95 || b = 126
+               out .= Chr(b)
+            else
+               out .= Format("%{:02X}", b)
+         }
+         return out
+      }   
+   }
+   Static Shadow() {
+      hwnd := this.Gui.Hwnd
+      DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 2, "Int*", 2, "UInt", 4)   ; DWMWA_NCRENDERING_POLICY = DWMNCRP_ENABLED
+      mar := Buffer(16, 0)
+      NumPut("Int", 1, "Int", 1, "Int", 1, "Int", 1, mar)   ; left, right, top, bottom
+      DllCall("dwmapi\DwmExtendFrameIntoClientArea", "Ptr", hwnd, "Ptr", mar)
+   }
+}
+
+/**
+ * On unlock or resume from sleep, refresh immediatly
+ */
+SetupEventMonitoring() {
+   Static WM_POWERBROADCAST := 0x0218
+   ; Registers to receive notification when the system is suspended or resumed
+   Static hwndNotification := 0
+   hwndNotification := DllCall("RegisterSuspendResumeNotification", "ptr", A_ScriptHwnd, "uint", 0)
+   ; Registers the specified window to receive session change notifications
+   DllCall("Wtsapi32.dll\WTSRegisterSessionNotification", "ptr", A_ScriptHwnd, "uint", 1)
+   OnMessage(WM_POWERBROADCAST, PowerChangeEvent)
+   ; Session change information
+   DllCall("Wtsapi32\WTSRegisterSessionNotification", "Ptr", A_ScriptHwnd, "UInt", 0) ; NOTIFY_FOR_THIS_SESSION = 0
+   OnMessage(0x2B1, cbWM_WTSSESSION_CHANGE)
+
+   /*==============================================================================
+   Suspend resume messages, 7 means the user also initiated it vs system background
+   AHK2 WM_BROADCAST:18, lparam=0, msg=536 PBT_APMRESUMEAUTOMATIC
+   AHK2 WM_BROADCAST:7, lparam=0, msg=536 PBT_APMRESUMESUSPEND
+   ================================================================================*/
+   OnExit UnRegisterPower
+   Return
+   ; Session Change lock/unlock
+   cbWM_WTSSESSION_CHANGE(wParam, lParam, msg, hwnd) {
+         If (wParam = 0x7) { ; WTS_SESSION_LOCK
+      } Else If (wParam = 0x8) { ; WTS_SESSION_UNLOCK
+         SetTimer((*) => Weather.Update(), -3000)
+      }
+   }
+   ; Resume from sleep
+   PowerChangeEvent(wParam, lParam, Msg, hWnd) {
+      Static WTS_SESSION_LOCK := "0x7", WTS_SESSION_UNLOCK := "0x8", WM_WTSSESSION_CHANGE := "0x02B1", WTS_SESSION_LOGON := "0x5", WTS_SESSION_LOGOFF := "0x6"
+      Static changeText := { 10: "PBT_APMPOWERSTATUSCHANGE", 18: "PBT_APMRESUMEAUTOMATIC", 7: "PBT_APMRESUMESUSPEND", 4: "PBT_APMSUSPEND", 32787: "PBT_POWERSETTINGCHANGE" }
+      Static PBT_APMRESUMESUSPEND := 0x7, PBT_APMRESUMEAUTOMATIC := 18
+      Switch wParam {
+         Case PBT_APMRESUMESUSPEND :
+            SetTimer((*) => Weather.Update(), -3000)
+         Default :
+      }
+   }
+   ;----------------------------------------------------------------------
+   ; On exit, unregister handlers
+   ;----------------------------------------------------------------------
+   UnRegisterPower(ExitReason, ExitCode) {
+      DllCall("Wtsapi32.dll\WTSUnRegisterSessionNotification", "ptr", A_ScriptHwnd)
+      If (hwndNotification)
+         DllCall("UnregisterSuspendResumeNotification", "ptr", hwndNotification)
+   }
+}
+
+Weather.Init()
+SetupEventMonitoring()

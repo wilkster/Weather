@@ -1,0 +1,1 @@
+C:\Apps\AHK\V2\Ahk2Exe.exe /in "WeatherWidget.ahk2" /icon "Clear.ico" /base "C:\Apps\AHK\V2\AutoHotkey64.exe" /out "WeatherWidget.exe"
