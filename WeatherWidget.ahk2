@@ -67,7 +67,7 @@ class Weather {
       86, "Heavy snow showers",
       95, "Thunderstorm",
       96, "Thunderstorm, hail",
-      99, "Intese Thunderstorm, hail"
+      99, "Intense Thunderstorm, hail"
    )
    Static Icons := Map(
       0, "Clear",               ;"Clear",
@@ -106,13 +106,21 @@ class Weather {
    static Init() {
       this.Menu := Menu()
       this.iniFile := A_ScriptDir "\WeatherWidget.ini"
+      this.NeedGeo := true
       If (FileExist(this.iniFile)) {
          ; Set default locations
          this.Name := IniRead(this.iniFile, "Default", "Loc", "Los Angeles, CA")
          If (obj := this.GeocodeName(this.Name)) {
-            this.Lat := obj.lat
-            this.Lon := obj.lon
+            this.Lat     := obj.lat
+            this.Lon     := obj.lon
+            this.NeedGeo := false
          }
+         this.Interval := IniRead(this.iniFile,"Default","Refresh Minutes",30) * 60*1000
+      } Else {
+         this.NeedGeo := false
+         IniWrite(this.Interval/60000, this.iniFile, "Default", "Refresh Minutes")
+         IniWrite(this.Name, this.iniFile, "Default", "Loc")
+         IniWrite(this.Name, this.iniFile, "Locations", "Loc1")
       }
       ; Build the GUI, should be DPI aware
       g := this.Gui := Gui("-Caption +ToolWindow +Border +DPIScale")
@@ -137,15 +145,15 @@ class Weather {
 
       ; Pretty up the window
       this.Round11Corners(g.hWnd)
-      this.Shadow()
+      this.DropShadow()
 
       OnMessage(0x201, this.Drag.bind(this))
       OnMessage(0x404, this.TrayMessage.Bind(this))
 
       g.OnEvent("ContextMenu", (*) => this.ShowRMB())
 
-      X := IniRead(this.iniFile,"Default","X",0)
-      Y := IniRead(this.iniFile,"Default","Y",0)
+      X := Min(IniRead(this.iniFile, "Default", "X", 0), SysGet(78))
+      Y := Min(IniRead(this.iniFile, "Default", "Y", 0), SysGet(79))
       g.Show("NoActivate x" X " y" Y " W260")
 
       this.Update()
@@ -166,7 +174,7 @@ class Weather {
     * Rebuild the RMB menu before launching it in case the settings file changed
     */
    Static BuildRMB() {
-      this.Menu.Delete
+      this.Menu.Delete()
       this.Menu := Menu()
 
       If (FileExist(this.iniFile)) {
@@ -182,7 +190,7 @@ class Weather {
       } else
          this.Menu.Add("Refresh now", this.Update.bind(this))
       this.Menu.add()
-      this.Menu.Add("Edit Locations File", (*) => Run(this.iniFile))  ; Creates a new menu item.
+      this.Menu.Add("Edit Settings File", (*) => Run(this.iniFile))  ; Creates a new menu item.
       this.Menu.Add("Exit", (*) => ExitApp())
    }
    
@@ -197,9 +205,13 @@ class Weather {
          this.Lat  := obj.lat
          this.Lon  := obj.lon
          this.name := place
+         this.Interval := IniRead(this.iniFile, "Default", "Refresh Minutes", 30) * 60 * 1000
          this.Update()
+         SetTimer(this.repeat, this.Interval)
          IniWrite(place, this.iniFile, "Default", "Loc")
-      }
+         this.NeedGeo := false
+      } Else
+         this.Ctl["updated"].Text := "Location lookup failed for " place
    }
    /**
     * Save Gui location on exit
@@ -207,8 +219,9 @@ class Weather {
    static SavePosition(ExitReason, ExitCode) {
       this.Gui.GetPos(&X, &Y)
       IniWrite(This.Name,this.iniFile,"Default","Loc")
-      IniWrite(X,this.iniFile,"Default","X")
-      IniWrite(Y,this.iniFile,"Default","Y")
+      IniWrite(X, this.iniFile, "Default", "X")
+      IniWrite(Y, this.iniFile, "Default", "Y")
+      IniWrite(this.Interval/60000,this.iniFile,"Default","Refresh Minutes")
    }
    /**
     * Drag the GUI on a message since we don't have a caption
@@ -223,6 +236,11 @@ class Weather {
     * Query the JSON Weather data
     */
    static Update(*) {
+      If (this.NeedGeo) {
+         If (!(obj := this.GeocodeName(this.Name)))
+            Return this.Ctl["updated"].Text := "Location lookup failed for " this.Name " - " FormatTime(, "h:mm tt")
+         this.Lat := obj.lat, this.Lon := obj.lon, this.NeedGeo := false
+      }
       url := "https://api.open-meteo.com/v1/forecast?latitude=" this.Lat "&longitude=" this.Lon
          . "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,is_day"
          . "&hourly=temperature_2m,precipitation_probability,wind_speed_10m"
@@ -239,6 +257,7 @@ class Weather {
          this.PruneMemory()
       } catch as e {
          this.Ctl["updated"].Text := "Update failed " FormatTime(, "h:mm tt") " (" e.Message ")"
+         SetTimer(this.repeat, -60000)
       }
    }
 
@@ -299,12 +318,15 @@ class Weather {
             AltIcon := A_ScriptDir . "\Night " . this.Icons[code] . ".ico"
             if (FileExist(AltIcon))
                Icon := AltIcon
-            this.Gui.BackColor := isDay ? "1E1E2E" : "11111B"
          }
-         if (FileExist(Icon))
+         this.Gui.BackColor := isDay ? "1E1E2E" : "11111B"
+         If (FileExist(Icon)) {
             TraySetIcon(Icon)
+            this.Ctl["Icon"].value := Icon
+         } Else {
+            OutputDebug("Missing expected Icon File:" Icon)
+         }
          A_IconTip := this.Name "`n" (Round(this.Value(cur, "temperature_2m")) . "° - " . this.Codes[code])
-         this.Ctl["Icon"].value := Icon
       }
    }
 
@@ -337,8 +359,20 @@ class Weather {
          , "UInt", 4)
 
    }   
-   Static IsWindowVisible(hwndTry) => DllCall("User32.dll\IsWindowVisible", "Ptr", hwndTry)
+   /**
+    * Give the window a drop shadow, since no caption it won't do it by default
+    */
+   Static DropShadow() {
+      hwnd := this.Gui.Hwnd
+      DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 2, "Int*", 2, "UInt", 4)   ; DWMWA_NCRENDERING_POLICY = DWMNCRP_ENABLED
+      mar := Buffer(16, 0)
+      NumPut("Int", 1, "Int", 1, "Int", 1, "Int", 1, mar)   ; left, right, top, bottom
+      DllCall("dwmapi\DwmExtendFrameIntoClientArea", "Ptr", hwnd, "Ptr", mar)
+   }
 
+   /**
+    * Tray message callback when icon is clicked, toggle the window visibility
+    */
    Static TrayMessage(wParam, lParam, uMsg, hWnd) {
       ; debug(hex(lParam))
       Switch lParam {
@@ -355,6 +389,7 @@ class Weather {
          Default:
       }
    }
+   Static IsWindowVisible(hwndTry) => DllCall("User32.dll\IsWindowVisible", "Ptr", hwndTry)
    Static PruneMemory() => DllCall("psapi\EmptyWorkingSet", "ptr", -1)
 
    /**
@@ -366,6 +401,7 @@ class Weather {
       url := "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=" UriEncode(place)
       try {
          http := ComObject("WinHttp.WinHttpRequest.5.1")
+         http.SetTimeouts(5000, 5000, 10000, 10000)
          http.Open("GET", url, false)
          http.SetRequestHeader("User-Agent", "AHK2-GeoLookup/1.0")   ; required by Nominatim
          http.Send()
@@ -396,13 +432,7 @@ class Weather {
          return out
       }   
    }
-   Static Shadow() {
-      hwnd := this.Gui.Hwnd
-      DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 2, "Int*", 2, "UInt", 4)   ; DWMWA_NCRENDERING_POLICY = DWMNCRP_ENABLED
-      mar := Buffer(16, 0)
-      NumPut("Int", 1, "Int", 1, "Int", 1, "Int", 1, mar)   ; left, right, top, bottom
-      DllCall("dwmapi\DwmExtendFrameIntoClientArea", "Ptr", hwnd, "Ptr", mar)
-   }
+
 }
 
 /**
@@ -414,10 +444,10 @@ SetupEventMonitoring() {
    Static hwndNotification := 0
    hwndNotification := DllCall("RegisterSuspendResumeNotification", "ptr", A_ScriptHwnd, "uint", 0)
    ; Registers the specified window to receive session change notifications
-   DllCall("Wtsapi32.dll\WTSRegisterSessionNotification", "ptr", A_ScriptHwnd, "uint", 1)
+   ; DllCall("Wtsapi32.dll\WTSRegisterSessionNotification", "ptr", A_ScriptHwnd, "uint", 1)
+   DllCall("Wtsapi32\WTSRegisterSessionNotification", "Ptr", A_ScriptHwnd, "UInt", 0) ; NOTIFY_FOR_THIS_SESSION = 0
    OnMessage(WM_POWERBROADCAST, PowerChangeEvent)
    ; Session change information
-   DllCall("Wtsapi32\WTSRegisterSessionNotification", "Ptr", A_ScriptHwnd, "UInt", 0) ; NOTIFY_FOR_THIS_SESSION = 0
    OnMessage(0x2B1, cbWM_WTSSESSION_CHANGE)
 
    /*==============================================================================
@@ -431,7 +461,8 @@ SetupEventMonitoring() {
    cbWM_WTSSESSION_CHANGE(wParam, lParam, msg, hwnd) {
          If (wParam = 0x7) { ; WTS_SESSION_LOCK
       } Else If (wParam = 0x8) { ; WTS_SESSION_UNLOCK
-         SetTimer((*) => Weather.Update(), -3000)
+         SetTimer(Weather.Repeat, Weather.Interval)
+         SetTimer((*) => Weather.Update(), -10000)
       }
    }
    ; Resume from sleep
@@ -441,7 +472,8 @@ SetupEventMonitoring() {
       Static PBT_APMRESUMESUSPEND := 0x7, PBT_APMRESUMEAUTOMATIC := 18
       Switch wParam {
          Case PBT_APMRESUMESUSPEND :
-            SetTimer((*) => Weather.Update(), -3000)
+            SetTimer(Weather.Repeat, Weather.Interval)
+            SetTimer((*) => Weather.Update(), -10000)
          Default :
       }
    }
