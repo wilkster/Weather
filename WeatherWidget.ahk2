@@ -126,21 +126,23 @@ class Weather {
       g := this.Gui := Gui("-Caption +ToolWindow +Border +DPIScale")
       g.BackColor := "1E1E2E"
       g.MarginX := 10, g.MarginY := 8
-      g.SetFont("s9 cA6ADC8", "Segoe UI")
-      this.Ctl["loc"] := g.AddText("w240", this.Name)
-      g.SetFont("s28 cFFFFFF Bold", "Segoe UI")
-      this.Ctl["temp"] := g.AddText("w240 y+0", "--°")
-      g.SetFont("s11 cCDD6F4 Norm", "Segoe UI")
-      this.Ctl["cond"] := g.AddText("w240 y+0", "Loading...")
-      g.SetFont("s9 cA6ADC8", "Segoe UI")
-      this.Ctl["detail"] := g.AddText("w240", "")
-      g.SetFont("s10 cF9E2AF", "Segoe UI")
-      this.Ctl["day"] := g.AddText("w240 y+10", "")
-      this.Ctl["tom"] := g.AddText("w240 y+2", "")
-      g.SetFont("s9 cCDD6F4", "Consolas")
-      this.Ctl["hourly"] := g.AddText("w240 r8", "")
-      g.SetFont("s8 c6C7086", "Segoe UI")
-      this.Ctl["updated"] := g.AddText("w240", "")
+      /*
+         y+N is relative to the bottom edge of the previous control.
+         yp+N is relative to the top edge (Y position) of the previous control. p = previous
+         ym adds a margin
+         r8 means 8 rows
+      */
+      g.SetFont("s9 cA6ADC8", "Segoe UI"),       this.Ctl["loc"]     := g.AddText("w240", this.Name)
+      g.SetFont("s28 cFFFFFF Bold", "Segoe UI"), this.Ctl["temp"]    := g.AddText("w80 y+0 Right", "---°") ;x/y is right/bot of, xp/yp is left/top of prior
+      g.SetFont("s20 cFFFFFF Bold", "Segoe UI"), this.Ctl["AQI"]     := g.AddText("x+0 yp+12 w40 Right", "---")
+      g.SetFont("s9 cA6ADC8 Norm", "Segoe UI"),  this.Ctl["AQIlab"]  := g.AddText("x+2 yp+13 w30", "aqi")
+      g.SetFont("s11 cd5defa Norm", "Segoe UI"), this.Ctl["cond"]    := g.AddText("xm y+10 w240", "Loading...")
+      g.SetFont("s10 cbcc3e1", "Segoe UI"),      this.Ctl["detail"]  := g.AddText("w240", "")
+      g.SetFont("s10 cF9E2AF", "Consolas"),      this.Ctl["day"]     := g.AddText("w240 y+10", "")
+      g.SetFont("s10 cb5a47f", "Consolas"),      this.Ctl["tom"]     := g.AddText("w240 y+2", "")
+      g.SetFont("s10 cCDD6F4", "Consolas"),       this.Ctl["hourly"]  := g.AddText("w240 r8", "")
+      g.SetFont("s8 c6C7086", "Segoe UI"),       this.Ctl["updated"] := g.AddText("w240", "")
+
       this.Ctl["Icon"] := g.AddPicture("H96 W96 X150 Y10" )
 
       ; Pretty up the window
@@ -156,10 +158,11 @@ class Weather {
       Y := Min(IniRead(this.iniFile, "Default", "Y", 0), SysGet(79))
       g.Show("NoActivate x" X " y" Y " W260")
 
-      this.Update()
+      this.cbUpdateData := this.RefreshData.bind(this)
+      this.UpdateWeather()
+      this.UpdateAirQuality()
       ; Auto Refresh
-      this.repeat := this.update.bind(this)
-      SetTimer(this.repeat, this.Interval)
+      SetTimer(this.cbUpdateData, this.Interval)
 
       OnExit this.SavePosition.bind(this)
    }
@@ -188,7 +191,7 @@ class Weather {
                Break
          }         
       } else
-         this.Menu.Add("Refresh now", this.Update.bind(this))
+         this.Menu.Add("Refresh now", this.cbUpdateData)
       this.Menu.add()
       this.Menu.Add("Edit Settings File", (*) => Run(this.iniFile))  ; Creates a new menu item.
       this.Menu.Add("Exit", (*) => ExitApp())
@@ -206,8 +209,8 @@ class Weather {
          this.Lon  := obj.lon
          this.name := place
          this.Interval := IniRead(this.iniFile, "Default", "Refresh Minutes", 30) * 60 * 1000
-         this.Update()
-         SetTimer(this.repeat, this.Interval)
+         this.UpdateWeather()
+         SetTimer(this.cbUpdateData, this.Interval)
          IniWrite(place, this.iniFile, "Default", "Loc")
          this.NeedGeo := false
       } Else
@@ -231,21 +234,33 @@ class Weather {
          PostMessage(0xA1, 2, , , this.Gui)   ; WM_NCLBUTTONDOWN, HTCAPTION
          
    }
+   Static RefreshData(*) {
+      this.UpdateWeather()
+      this.UpdateAirQuality()
+      this.PruneMemory()
+   }
+   /**
+    * Resolve lat/lon from the location name if needed.
+    * @returns {Integer} true if coordinates are available, false if the lookup failed
+    */
+   Static EnsureGeo() {
+      If (!this.NeedGeo)
+         Return true
+      If (!(obj := this.GeocodeName(this.Name))) {
+         this.Ctl["updated"].Text := "Location lookup failed for " this.Name " - " FormatTime(, "h:mm tt")
+         Return false
+      }
+      this.Lat := obj.lat, this.Lon := obj.lon, this.NeedGeo := false
+      Return true
+   }
 
    /**
-    * Query the JSON Weather data
+    * GET a URL and hand the response text to a renderer.
+    * On any failure, shows the error and schedules a retry.
+    * @param url The full request URL
+    * @param renderer Callback that receives the response text
     */
-   static Update(*) {
-      If (this.NeedGeo) {
-         If (!(obj := this.GeocodeName(this.Name)))
-            Return this.Ctl["updated"].Text := "Location lookup failed for " this.Name " - " FormatTime(, "h:mm tt")
-         this.Lat := obj.lat, this.Lon := obj.lon, this.NeedGeo := false
-      }
-      url := "https://api.open-meteo.com/v1/forecast?latitude=" this.Lat "&longitude=" this.Lon
-         . "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,is_day"
-         . "&hourly=temperature_2m,precipitation_probability,wind_speed_10m"
-         . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
-         . "&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=2&timezone=auto"
+   Static Query(url, renderer) {
       try {
          http := ComObject("WinHttp.WinHttpRequest.5.1")
          http.SetTimeouts(5000, 5000, 10000, 10000)
@@ -253,19 +268,69 @@ class Weather {
          http.Send()
          if (http.Status != 200)
             throw Error("HTTP " http.Status)
-         this.Render(http.ResponseText)
-         this.PruneMemory()
+         renderer(http.ResponseText)
       } catch as e {
          this.Ctl["updated"].Text := "Update failed " FormatTime(, "h:mm tt") " (" e.Message ")"
-         SetTimer(this.repeat, -60000)
+         SetTimer(this.cbUpdateData, -60000)
       }
+   }
+
+   /**
+    * Query the JSON Air Quality data
+    */
+   Static UpdateAirQuality(*) {
+      If (!this.EnsureGeo())
+         Return
+      ; TODO - utilize hourly AQI data: add "&hourly=us_aqi" to the URL
+      url := "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" this.Lat "&longitude=" this.Lon "&current=us_aqi"
+      this.Query(url, this.RenderAQI.Bind(this))
+   }
+
+   /**
+    * Query the JSON Weather data
+    */
+   Static UpdateWeather(*) {
+      If (!this.EnsureGeo())
+         Return
+      url := "https://api.open-meteo.com/v1/forecast?latitude=" this.Lat "&longitude=" this.Lon
+         . "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,is_day"
+         . "&hourly=temperature_2m,precipitation_probability,wind_speed_10m"
+         . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+         . "&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=2&timezone=auto"
+      this.Query(url, this.RenderWeather.Bind(this))
    }
 
    /**
     * Render the weather data based on JSON data
     * @param json Query Results
     */
-   static Render(json) {
+   Static RenderAQI(json) {
+      cur := this.Section(json, "current")
+      aqi := Integer(this.Value(cur, "us_aqi"))
+      this.Ctl["AQI"].Text := aqi
+      this.Ctl["AQI"].SetFont("C" this.AqiColor(aqi))
+   }
+   Static AqiColor(aqi) {
+      if (aqi = "")
+         return ""
+
+      if (aqi < 0)
+         return ""
+
+      if (aqi <= 50)
+         return "1dd31d"
+      else if (aqi <= 100)
+         return "cece1f"
+      else if (aqi <= 150)
+         return "c9721b"
+      else if (aqi <= 200)
+         return "f93434"
+      else if (aqi <= 300)
+         return "99004C"
+      else
+         return "7E0023"
+   }   
+   static RenderWeather(json) {
       this.Ctl["loc"].Text := this.Name
       cur := this.Section(json, "current")
       day := this.Section(json, "daily")
@@ -273,22 +338,22 @@ class Weather {
 
       code := Integer(this.Value(cur, "weather_code"))
       isDay := Integer(this.Value(cur, "is_day"))
-      this.Ctl["temp"].Text := Round(this.Value(cur, "temperature_2m")) "°"
+      tf := Round(this.Value(cur, "temperature_2m"))
+      this.Ctl["temp"].Text := tf "°"
       this.Ctl["cond"].Text := this.Codes.Get(code, "Code " code)
-      this.Ctl["detail"].Text := "Feels " Round(this.Value(cur, "apparent_temperature")) "°"
+      this.Ctl["detail"].Text := (tf < 40 ? "❄ " : "") . "Feels " Round(this.Value(cur, "apparent_temperature")) "°"
          . "   Humidity " Round(this.Value(cur, "relative_humidity_2m")) "%"
          . "   Wind " Round(this.Value(cur, "wind_speed_10m")) " mph"
       ; Today
       hi := Round(this.List(day, "temperature_2m_max")[1])
       lo := Round(this.List(day, "temperature_2m_min")[1])
       pop := this.List(day, "precipitation_probability_max")[1]
-      ; TODO - Could create two text entries to make sure they are aligned for today and tomorrow
-      this.Ctl["day"].Text := "Today         H " hi "°  L " lo "°  Precip " (IsNumber(pop) ? pop : "--") "%"
+      this.Ctl["day"].Text := "Today    H " hi "° L " lo "° Precip " (IsNumber(pop) ? pop : "--") "%"
       ; Tomorrow
       hi := Round(this.List(day, "temperature_2m_max")[2])
       lo := Round(this.List(day, "temperature_2m_min")[2])
       pop := this.List(day, "precipitation_probability_max")[2]
-      this.Ctl["tom"].Text := "Tomorrow  H " hi "°  L " lo "°  Precip " (IsNumber(pop) ? pop : "--") "%"
+      this.Ctl["tom"].Text := "Tomorrow H " hi "° L " lo "° Precip " (IsNumber(pop) ? pop : "--") "%"
 
       ; Hourly slots every 3 hours for the rest of the day
       RegExMatch(cur, '"time":"[^T]+T(\d+)', &m)
@@ -461,8 +526,8 @@ SetupEventMonitoring() {
    cbWM_WTSSESSION_CHANGE(wParam, lParam, msg, hwnd) {
          If (wParam = 0x7) { ; WTS_SESSION_LOCK
       } Else If (wParam = 0x8) { ; WTS_SESSION_UNLOCK
-         SetTimer(Weather.Repeat, Weather.Interval)
-         SetTimer((*) => Weather.Update(), -10000)
+         SetTimer(Weather.cbUpdateData, Weather.Interval)
+         SetTimer(Weather.cbUpdateData, -10000)
       }
    }
    ; Resume from sleep
@@ -472,8 +537,8 @@ SetupEventMonitoring() {
       Static PBT_APMRESUMESUSPEND := 0x7, PBT_APMRESUMEAUTOMATIC := 18
       Switch wParam {
          Case PBT_APMRESUMESUSPEND :
-            SetTimer(Weather.Repeat, Weather.Interval)
-            SetTimer((*) => Weather.Update(), -10000)
+            SetTimer(Weather.cbUpdateData, Weather.Interval)
+            SetTimer(Weather.cbUpdateData, -10000)
          Default :
       }
    }
