@@ -11,6 +11,9 @@
 TODO
 - seems to stay on all desktops, this is desired
 x don't update if locked and refresh when coming out of sleep (after a short delay)
+x RMB to stay on top
+x Save position by computer name
+- Get wind direction, are there unicode arrows that point in 8 directions?
 - https://github.com/Makin-Things/weather-icons (SVG, some are animated)
 */
 class Weather {
@@ -107,19 +110,21 @@ class Weather {
       this.Menu := Menu()
       this.iniFile := A_ScriptDir "\WeatherWidget.ini"
       this.NeedGeo := true
+      this.OnTop := false
       If (FileExist(this.iniFile)) {
          ; Set default locations
-         this.Name := IniRead(this.iniFile, "Default", "Loc", "Los Angeles, CA")
+         this.Name := IniRead(this.iniFile, A_ComputerName, "Loc", "Los Angeles, CA")
          If (obj := this.GeocodeName(this.Name)) {
             this.Lat     := obj.lat
             this.Lon     := obj.lon
             this.NeedGeo := false
          }
-         this.Interval := IniRead(this.iniFile,"Default","Refresh Minutes",30) * 60*1000
+         this.Interval := IniRead(this.iniFile,A_ComputerName,"Refresh Minutes",30) * 60*1000
+         this.OnTop    := IniRead(this.iniFile, A_ComputerName, "OnTop", 0)
       } Else {
          this.NeedGeo := false
-         IniWrite(this.Interval/60000, this.iniFile, "Default", "Refresh Minutes")
-         IniWrite(this.Name, this.iniFile, "Default", "Loc")
+         IniWrite(this.Interval/60000, this.iniFile, A_ComputerName, "Refresh Minutes")
+         IniWrite(this.Name, this.iniFile, A_ComputerName, "Loc")
          IniWrite(this.Name, this.iniFile, "Locations", "Loc1")
       }
       ; Build the GUI, should be DPI aware
@@ -140,7 +145,7 @@ class Weather {
       g.SetFont("s10 cbcc3e1", "Segoe UI"),      this.Ctl["detail"]  := g.AddText("w240", "")
       g.SetFont("s10 cF9E2AF", "Consolas"),      this.Ctl["day"]     := g.AddText("w240 y+10", "")
       g.SetFont("s10 cb5a47f", "Consolas"),      this.Ctl["tom"]     := g.AddText("w240 y+2", "")
-      g.SetFont("s10 cCDD6F4", "Consolas"),       this.Ctl["hourly"]  := g.AddText("w240 r8", "")
+      g.SetFont("s10 cCDD6F4", "Consolas"),       this.Ctl["hourly"]  := g.AddText("w240 r9", "")
       g.SetFont("s8 c6C7086", "Segoe UI"),       this.Ctl["updated"] := g.AddText("w240", "")
 
       this.Ctl["Icon"] := g.AddPicture("H96 W96 X150 Y10" )
@@ -153,10 +158,13 @@ class Weather {
       OnMessage(0x404, this.TrayMessage.Bind(this))
 
       g.OnEvent("ContextMenu", (*) => this.ShowRMB())
-
-      X := Min(IniRead(this.iniFile, "Default", "X", 0), SysGet(78))
-      Y := Min(IniRead(this.iniFile, "Default", "Y", 0), SysGet(79))
+      ; Keep on visible monitors
+      g.Show("NoActivate Hide W260")
+      g.GetPos(,,&W, &H)
+      X := Min(IniRead(this.iniFile, A_ComputerName, "X", 0), SysGet(78) - W * A_ScreenDPI / 96)
+      Y := Min(IniRead(this.iniFile, A_ComputerName, "Y", 0), SysGet(79) - H * A_ScreenDPI / 96)
       g.Show("NoActivate x" X " y" Y " W260")
+      this.gui.opt(this.OnTop ? "+AlwaysOnTop" : "-AlwaysOnTop")
 
       this.cbUpdateData := this.RefreshData.bind(this)
       this.UpdateWeather()
@@ -193,8 +201,17 @@ class Weather {
       } else
          this.Menu.Add("Refresh now", this.cbUpdateData)
       this.Menu.add()
+      mn := "Always On Top"
+      this.Menu.Add(mn, Toggle)  ; Creates a new menu item.
+      If (this.OnTop)
+         this.Menu.Check(mn)
       this.Menu.Add("Edit Settings File", (*) => Run(this.iniFile))  ; Creates a new menu item.
       this.Menu.Add("Exit", (*) => ExitApp())
+      Toggle(*) {
+         this.OnTop := !this.OnTop
+         IniWrite(this.OnTop, this.iniFile, A_ComputerName, "OnTop")
+         this.gui.opt(this.OnTop ? "+AlwaysOnTop" : "-AlwaysOnTop")
+      } 
    }
    
    /**
@@ -208,10 +225,10 @@ class Weather {
          this.Lat  := obj.lat
          this.Lon  := obj.lon
          this.name := place
-         this.Interval := IniRead(this.iniFile, "Default", "Refresh Minutes", 30) * 60 * 1000
-         this.UpdateWeather()
+         this.Interval := IniRead(this.iniFile, A_ComputerName, "Refresh Minutes", 30) * 60 * 1000
+         this.RefreshData()
          SetTimer(this.cbUpdateData, this.Interval)
-         IniWrite(place, this.iniFile, "Default", "Loc")
+         IniWrite(place, this.iniFile, A_ComputerName, "Loc")
          this.NeedGeo := false
       } Else
          this.Ctl["updated"].Text := "Location lookup failed for " place
@@ -221,10 +238,10 @@ class Weather {
     */
    static SavePosition(ExitReason, ExitCode) {
       this.Gui.GetPos(&X, &Y)
-      IniWrite(This.Name,this.iniFile,"Default","Loc")
-      IniWrite(X, this.iniFile, "Default", "X")
-      IniWrite(Y, this.iniFile, "Default", "Y")
-      IniWrite(this.Interval/60000,this.iniFile,"Default","Refresh Minutes")
+      IniWrite(This.Name,this.iniFile,A_ComputerName,"Loc")
+      IniWrite(X, this.iniFile, A_ComputerName, "X")
+      IniWrite(Y, this.iniFile, A_ComputerName, "Y")
+      IniWrite(this.Interval/60000,this.iniFile,A_ComputerName,"Refresh Minutes")
    }
    /**
     * Drag the GUI on a message since we don't have a caption
@@ -293,8 +310,8 @@ class Weather {
       If (!this.EnsureGeo())
          Return
       url := "https://api.open-meteo.com/v1/forecast?latitude=" this.Lat "&longitude=" this.Lon
-         . "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,is_day"
-         . "&hourly=temperature_2m,precipitation_probability,wind_speed_10m"
+         . "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code,is_day"
+         . "&hourly=temperature_2m,precipitation_probability,wind_speed_10m,wind_direction_10m"
          . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
          . "&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=2&timezone=auto"
       this.Query(url, this.RenderWeather.Bind(this))
@@ -336,14 +353,15 @@ class Weather {
       day := this.Section(json, "daily")
       hrs := this.Section(json, "hourly")
 
-      code := Integer(this.Value(cur, "weather_code"))
+      code  := Integer(this.Value(cur, "weather_code"))
       isDay := Integer(this.Value(cur, "is_day"))
-      tf := Round(this.Value(cur, "temperature_2m"))
+      tf    := Round(this.Value(cur, "temperature_2m"))
+      d     := Compass(this.Value(cur, "wind_direction_10m"))
       this.Ctl["temp"].Text := tf "°"
       this.Ctl["cond"].Text := this.Codes.Get(code, "Code " code)
       this.Ctl["detail"].Text := (tf < 40 ? "❄ " : "") . "Feels " Round(this.Value(cur, "apparent_temperature")) "°"
-         . "   Humidity " Round(this.Value(cur, "relative_humidity_2m")) "%"
-         . "   Wind " Round(this.Value(cur, "wind_speed_10m")) " mph"
+         . "   Hum " Round(this.Value(cur, "relative_humidity_2m")) "%"
+         . "   Wind " Round(this.Value(cur, "wind_speed_10m")) " mph " d
       ; Today
       hi := Round(this.List(day, "temperature_2m_max")[1])
       lo := Round(this.List(day, "temperature_2m_min")[1])
@@ -360,17 +378,19 @@ class Weather {
       temps := this.List(hrs, "temperature_2m")
       pops  := this.List(hrs, "precipitation_probability")
       winds := this.List(hrs, "wind_speed_10m")
-      out   := ""
+      dirs := this.List(hrs, "wind_direction_10m")
+      out   := " Time  Temp Prec    Wind`n"
       h := Integer(m[1]) + 1
       ; Build the 3 hours forecast for the next 
       while (A_Index <= 8 && h < temps.Length) {
-         t := temps[h + 1]
+         t := temps[h + 1] 
          p := pops[h + 1]
          w := winds[h + 1]
+         d := Compass(dirs[h + 1])
          out .= this.Pad(this.Hour12(h), 6)
-            . this.Pad(IsNumber(t) ? Round(t) "°" : "--", 5)
-            . this.Pad(IsNumber(p) ? p "%" : "--", 5)
-            . this.Pad(IsNumber(w) ? Round(w) " mph" : "--", 7) "`n"
+            . this.Pad(IsNumber(t) ? (Round(t) "°") : "--", 5)
+            . this.Pad(IsNumber(p) ? (p "%") : "--", 5)
+            . "  " . this.Pad(IsNumber(w) ? (Round(w) " mph ") : ("--"),8) d "`n"
          h += 3
       }
       this.Ctl["hourly"].Text := RTrim(out, "`n")
@@ -392,6 +412,11 @@ class Weather {
             OutputDebug("Missing expected Icon File:" Icon)
          }
          A_IconTip := this.Name "`n" (Round(this.Value(cur, "temperature_2m")) . "° - " . this.Codes[code])
+      }
+      static Compass(deg) {
+         if (!IsNumber(deg))
+            return ""
+         return ["↓","↙N","↙","↙E","←","↖E","↖","↖S","↑","S↗","↗","W↗","→","W↘","↘","N↘"][Mod(Round(deg / 22.5), 16) + 1]
       }
    }
 
