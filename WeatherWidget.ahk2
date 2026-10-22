@@ -24,6 +24,7 @@ class Weather {
    static Gui      := ""
    static Ctl      := Map()
    static Menu     := ""
+   Static ActiveIcon := ""
    /*
       WMO Weather Codes Reference
       Code	      Description
@@ -128,7 +129,7 @@ class Weather {
          IniWrite(this.Name, this.iniFile, "Locations", "Loc1")
       }
       ; Build the GUI, should be DPI aware
-      g := this.Gui := Gui("-Caption +ToolWindow +Border +DPIScale")
+      g := this.Gui := Gui("-Caption +ToolWindow +Border +DPIScale +E0x02000000")
       g.BackColor := "1E1E2E"
       g.MarginX := 10, g.MarginY := 8
       /*
@@ -137,18 +138,18 @@ class Weather {
          ym adds a margin
          r8 means 8 rows
       */
-      g.SetFont("s9 cA6ADC8", "Segoe UI"),       this.Ctl["loc"]     := g.AddText("w240", this.Name)
+      g.SetFont("s9 cA6ADC8", "Segoe UI"),       this.Ctl["loc"]     := g.AddText("w180", this.Name)
       g.SetFont("s28 cFFFFFF Bold", "Segoe UI"), this.Ctl["temp"]    := g.AddText("w80 y+0 Right", "---°") ;x/y is right/bot of, xp/yp is left/top of prior
       g.SetFont("s20 cFFFFFF Bold", "Segoe UI"), this.Ctl["AQI"]     := g.AddText("x+0 yp+12 w40 Right", "---")
       g.SetFont("s9 cA6ADC8 Norm", "Segoe UI"),  this.Ctl["AQIlab"]  := g.AddText("x+2 yp+13 w30", "aqi")
-      g.SetFont("s11 cd5defa Norm", "Segoe UI"), this.Ctl["cond"]    := g.AddText("xm y+10 w240", "Loading...")
+      g.SetFont("s11 cd5defa Norm", "Segoe UI"), this.Ctl["cond"]    := g.AddText("xm y+10 w180", "Loading...")
       g.SetFont("s10 cbcc3e1", "Segoe UI"),      this.Ctl["detail"]  := g.AddText("w240", "")
       g.SetFont("s10 cF9E2AF", "Consolas"),      this.Ctl["day"]     := g.AddText("w240 y+10", "")
       g.SetFont("s10 cb5a47f", "Consolas"),      this.Ctl["tom"]     := g.AddText("w240 y+2", "")
       g.SetFont("s10 cCDD6F4", "Consolas"),       this.Ctl["hourly"]  := g.AddText("w240 r9", "")
       g.SetFont("s8 c6C7086", "Segoe UI"),       this.Ctl["updated"] := g.AddText("w240", "")
 
-      this.Ctl["Icon"] := g.AddPicture("H96 W96 X150 Y10" )
+      this.Ctl["Icon"] := g.AddPicture("H96 W96 X150 Y0" )
 
       ; Pretty up the window
       this.Round11Corners(g.hWnd)
@@ -407,8 +408,11 @@ class Weather {
          }
          this.Gui.BackColor := isDay ? "1E1E2E" : "11111B"
          If (FileExist(Icon)) {
-            TraySetIcon(Icon)
-            this.Ctl["Icon"].value := Icon
+            If (Icon != this.ActiveIcon) {
+               TraySetIcon(Icon)
+               this.Ctl["Icon"].value := Icon
+               this.ActiveIcon := Icon
+            }
          } Else {
             OutputDebug("Missing expected Icon File:" Icon)
          }
