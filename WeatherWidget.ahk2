@@ -128,7 +128,7 @@ class Weather {
          IniWrite(this.Name, this.iniFile, A_ComputerName, "Loc")
          IniWrite(this.Name, this.iniFile, "Locations", "Loc1")
       }
-      ; Build the GUI, should be DPI aware
+      ; Build the GUI, should be DPI aware, composting helps with flicker
       g := this.Gui := Gui("-Caption +ToolWindow +Border +DPIScale +E0x02000000")
       g.BackColor := "1E1E2E"
       g.MarginX := 10, g.MarginY := 8
@@ -138,17 +138,16 @@ class Weather {
          ym adds a margin
          r8 means 8 rows
       */
-      g.SetFont("s9 cA6ADC8", "Segoe UI"),       this.Ctl["loc"]     := g.AddText("w180", this.Name)
-      g.SetFont("s28 cFFFFFF Bold", "Segoe UI"), this.Ctl["temp"]    := g.AddText("w80 y+0 Right", "---°") ;x/y is right/bot of, xp/yp is left/top of prior
-      g.SetFont("s20 cFFFFFF Bold", "Segoe UI"), this.Ctl["AQI"]     := g.AddText("x+0 yp+12 w40 Right", "---")
-      g.SetFont("s9 cA6ADC8 Norm", "Segoe UI"),  this.Ctl["AQIlab"]  := g.AddText("x+2 yp+13 w30", "aqi")
-      g.SetFont("s11 cd5defa Norm", "Segoe UI"), this.Ctl["cond"]    := g.AddText("xm y+10 w180", "Loading...")
-      g.SetFont("s10 cbcc3e1", "Segoe UI"),      this.Ctl["detail"]  := g.AddText("w240", "")
-      g.SetFont("s10 cF9E2AF", "Consolas"),      this.Ctl["day"]     := g.AddText("w240 y+10", "")
-      g.SetFont("s10 cb5a47f", "Consolas"),      this.Ctl["tom"]     := g.AddText("w240 y+2", "")
-      g.SetFont("s10 cCDD6F4", "Consolas"),       this.Ctl["hourly"]  := g.AddText("w240 r9", "")
-      g.SetFont("s8 c6C7086", "Segoe UI"),       this.Ctl["updated"] := g.AddText("w240", "")
-
+      this.AddTextCtl("loc",    "w180",                this.Name,    "s9 cA6ADC8", "Segoe UI")
+      this.AddTextCtl("temp",   "w80 y+0 Right",       "---°",       "s28 cFFFFFF Bold", "Segoe UI")
+      this.AddTextCtl("AQI",    "w40 x+0 yp+12 Right", "---",        "s20 cFFFFFF Bold", "Segoe UI")
+      this.AddTextCtl("AQIlab", "w30 x+2 yp+13",       "aqi",        "s9 cA6ADC8 Norm",  "Segoe UI")
+      this.AddTextCtl("cond",   "w180 xm y+10",        "Loading...", "s11 cd5defa Norm", "Segoe UI")
+      this.AddTextCtl("detail", "w240",                ,             "s10 cbcc3e1",      "Segoe UI")
+      this.AddTextCtl("tod",    "w240 y+10",           ,             "s10 cF9E2AF",      "Consolas")
+      this.AddTextCtl("tom",    "w240 y+2",            ,             "s10 cb5a47f",      "Consolas")
+      this.AddTextCtl("hourly", "w240 r9",             ,             "s10 cCDD6F4",      "Consolas")
+      this.AddTextCtl("updated","w240",                ,             "s8 c6C7086",       "Segoe UI")
       this.Ctl["Icon"] := g.AddPicture("H96 W96 X150 Y0" )
 
       ; Pretty up the window
@@ -157,23 +156,33 @@ class Weather {
 
       OnMessage(0x201, this.Drag.bind(this))
       OnMessage(0x404, this.TrayMessage.Bind(this))
+      this.cbUpdateData := this.RefreshData.bind(this)
 
       g.OnEvent("ContextMenu", (*) => this.ShowRMB())
-      ; Keep on visible monitors
+      ; Keep on visible monitors, measure first
       g.Show("NoActivate Hide W260")
       g.GetPos(,,&W, &H)
       X := Min(IniRead(this.iniFile, A_ComputerName, "X", 0), SysGet(78) - W * A_ScreenDPI / 96)
       Y := Min(IniRead(this.iniFile, A_ComputerName, "Y", 0), SysGet(79) - H * A_ScreenDPI / 96)
       g.Show("NoActivate x" X " y" Y " W260")
       this.gui.opt(this.OnTop ? "+AlwaysOnTop" : "-AlwaysOnTop")
+      this.RefreshData()
 
-      this.cbUpdateData := this.RefreshData.bind(this)
-      this.UpdateWeather()
-      this.UpdateAirQuality()
       ; Auto Refresh
       SetTimer(this.cbUpdateData, this.Interval)
 
       OnExit this.SavePosition.bind(this)
+   }
+   /**
+    * Helper method to add text controls and font
+    * @param name tag
+    * @param options size/placement options
+    * @param font font specifications
+    */
+   Static AddTextCtl(name, options, default?, fontOpt?, fontName?) {
+      if (IsSet(fontOpt) || IsSet(fontName))
+         this.gui.SetFont(fontOpt ?? "", fontName ?? "")
+      this.Ctl[name] := this.gui.AddText(options, default ?? "")
    }
    /**
     * Build/Rebuild/Show the RMB menu
@@ -287,10 +296,15 @@ class Weather {
          http.Send()
          if (http.Status != 200)
             throw Error("HTTP " http.Status)
-         renderer(http.ResponseText)
       } catch as e {
          this.Ctl["updated"].Text := "Update failed " FormatTime(, "h:mm tt") " (" e.Message ")"
          SetTimer(this.cbUpdateData, -60000)
+         Return
+      }
+      Try {
+         renderer(http.ResponseText)
+      } Catch Error As e {
+         this.Ctl["updated"].Text := "Render Error " FormatTime(, "h:mm tt") " (" e.Message ")"
       }
    }
 
@@ -368,7 +382,7 @@ class Weather {
       hi := Round(this.List(day, "temperature_2m_max")[1])
       lo := Round(this.List(day, "temperature_2m_min")[1])
       pop := this.List(day, "precipitation_probability_max")[1]
-      this.Ctl["day"].Text := "Today    H " hi "° L " lo "° Precip " (IsNumber(pop) ? pop : "--") "%"
+      this.Ctl["tod"].Text := "Today    H " hi "° L " lo "° Precip " (IsNumber(pop) ? pop : "--") "%"
       ; Tomorrow
       hi := Round(this.List(day, "temperature_2m_max")[2])
       lo := Round(this.List(day, "temperature_2m_min")[2])
@@ -380,9 +394,9 @@ class Weather {
       temps := this.List(hrs, "temperature_2m")
       pops  := this.List(hrs, "precipitation_probability")
       winds := this.List(hrs, "wind_speed_10m")
-      dirs := this.List(hrs, "wind_direction_10m")
+      dirs  := this.List(hrs, "wind_direction_10m")
       out   := " Time  Temp Prec    Wind`n"
-      h := Integer(m[1]) + 1
+      h     := Integer(m[1]) + 1
       ; Build the 3 hours forecast for the next 
       while (A_Index <= 8 && h < temps.Length) {
          t := temps[h + 1] 
