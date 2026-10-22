@@ -604,6 +604,7 @@ SetupEventMonitoring() {
    OnMessage(WM_POWERBROADCAST, PowerChangeEvent)
    ; Session change information
    OnMessage(0x2B1, cbWM_WTSSESSION_CHANGE)
+   OnMessage(0x7E, OnDisplayChange)   ; WM_DISPLAYCHANGE
 
    /*==============================================================================
    Suspend resume messages, 7 means the user also initiated it vs system background
@@ -633,6 +634,21 @@ SetupEventMonitoring() {
             OutputDebug("WeatherWidget: Resume from Suspension")
          Default :
       }
+   }
+
+   OnDisplayChange(wParam, lParam, msg, hwnd) {
+      OutputDebug("Redrawing Window due to refresh:" wParam)
+      SetTimer(RefreshGui, -500)   ; let the display stack settle first
+   }
+   /**
+    * Hack if the GUI was on a disabled monitor, the composting will not
+    * update the window itself
+    */
+   RefreshGui() {
+      ; RDW_INVALIDATE|RDW_ERASE|RDW_FRAME|RDW_ALLCHILDREN|RDW_UPDATENOW
+      Weather.Gui.Opt("-E0x02000000")
+      Weather.Gui.Opt("+E0x02000000")
+      DllCall("RedrawWindow", "Ptr", Weather.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x585)
    }
    ;----------------------------------------------------------------------
    ; On exit, unregister handlers
