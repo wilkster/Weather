@@ -14,7 +14,7 @@ x don't update if locked and refresh when coming out of sleep (after a short del
 x RMB to stay on top
 x Save position by computer name
 x Get wind direction, are there unicode arrows that point in 8 directions?
-- Get hourly weather codes, then we could use unicode characters
+x Get hourly weather codes, then we could use unicode characters
 - https://github.com/Makin-Things/weather-icons (SVG, some are animated)
 */
 class Weather {
@@ -106,34 +106,34 @@ class Weather {
       99, "Thunderstorm"        ;"Thunderstorm, hail"
    )
    Static emoji := map(
-      0, "☀",               ;"Clear",
+      0, "☀",         ;"Clear",
       1, "⛅",        ;"Mainly clear",
-      2, "⛅",       ;"Partly cloudy",
-      3, "☁",            ;"Overcast",
-      45, "☁",                ;"Fog",
-      48, "☁",                ;"Rime fog",
-      51, "☔",            ;"Light drizzle",
-      53, "☔",            ;"Drizzle",
-      55, "☔",            ;"Heavy drizzle",
-      56, "☔",   ;"Freezing drizzle",
-      57, "☔",   ;"Freezing drizzle",
-      61, "☔",      ;"Light rain",
-      63, "⛈",               ;"Rain",
-      65, "⛈",               ;"Heavy rain",
-      66, "⛈",      ;"Freezing rain",
-      67, "⛈",      ;"Freezing rain",
-      71, "❄",         ;"Light snow",
-      73, "❄",               ;"Snow",
-      75, "⛄",         ;"Heavy snow",
-      77, "❄",               ;"Snow grains",
-      80, "☔",      ;"Light showers",
-      81, "☔",      ;"Showers",
-      82, "⛈",               ;"Heavy showers",
-      85, "❄",               ;"Snow showers",
-      86, "❄",               ;"Heavy snow showers",
-      95, "⛈",       ;"Thunderstorm",
-      96, "⛈",       ;"Thunderstorm, hail",
-      99, "⛈"        ;"Thunderstorm, hail"
+      2, "⛅",        ;"Partly cloudy",
+      3, "☁",         ;"Overcast",
+      45, "☁",        ;"Fog",
+      48, "☁",        ;"Rime fog",
+      51, "☂",        ;"Light drizzle",
+      53, "☂",        ;"Drizzle",
+      55, "☔",       ;"Heavy drizzle",
+      56, "☔",       ;"Freezing drizzle",
+      57, "☔",       ;"Freezing drizzle",
+      61, "☔",       ;"Light rain",
+      63, "⛈",        ;"Rain",
+      65, "⛈",        ;"Heavy rain",
+      66, "⛈",        ;"Freezing rain",
+      67, "⛈",        ;"Freezing rain",
+      71, "❄",        ;"Light snow",
+      73, "❄",        ;"Snow",
+      75, "⛄",       ;"Heavy snow",
+      77, "❄",        ;"Snow grains",
+      80, "☔",       ;"Light showers",
+      81, "☔",       ;"Showers",
+      82, "⛈",        ;"Heavy showers",
+      85, "❄",        ;"Snow showers",
+      86, "❄",        ;"Heavy snow showers",
+      95, "⛈",        ;"Thunderstorm",
+      96, "⛈",        ;"Thunderstorm, hail",
+      99, "⛈"         ;"Thunderstorm, hail"
    )
    /**
     * Called during program startup
@@ -174,11 +174,11 @@ class Weather {
       this.Ctl.temp    := this.AddTextCtl("w80 y+0 Right",       "---°",       "s28 cFFFFFF Bold", "Segoe UI")
       this.Ctl.AQI     := this.AddTextCtl("w40 x+0 yp+12 Right", "---",        "s20 cFFFFFF Bold", "Segoe UI")
       this.Ctl.AQIlab  := this.AddTextCtl("w30 x+2 yp+13",       "aqi",        "s9  cA6ADC8 Norm", "Segoe UI")
-      this.Ctl.cond    := this.AddTextCtl("w180 xm y+10",        "Loading...", "s11 cd5defa Norm", "Segoe UI")
-      this.Ctl.detail  := this.AddTextCtl("w240",                ,             "s10 cbcc3e1",      "Segoe UI")
-      this.Ctl.tod     := this.AddTextCtl("w240 y+10",           ,             "s10 cF9E2AF",      "Consolas")
+      this.Ctl.cond    := this.AddTextCtl("w240 xm y+12",        "Loading...", "s11 cd5defa Norm", "Segoe UI")
+      this.Ctl.detail  := this.AddTextCtl("w240 y+8",                ,         "s10 cbcc3e1",      "Segoe UI")
+      this.Ctl.tod     := this.AddTextCtl("w240 y+8",           ,              "s10 cF9E2AF",      "Consolas")
       this.Ctl.tom     := this.AddTextCtl("w240 y+2",            ,             "s10 cb5a47f",      "Consolas")
-      this.Ctl.hourly  := this.AddTextCtl("w240 r9",             ,             "s10 cCDD6F4",      "Consolas")
+      this.Ctl.hourly  := this.AddTextCtl("w240 r9 y+8",             ,         "s10 cCDD6F4",      "Consolas")
       this.Ctl.updated := this.AddTextCtl("w240",                ,             "s8  c6C7086",      "Segoe UI")
       this.Ctl.Icon    := g.AddPicture("H96 W96 X150 Y0")
 
@@ -292,8 +292,10 @@ class Weather {
     * Drag the GUI on a message since we don't have a caption
     */
    static Drag(wParam, lParam, msg, hwnd) {
-      if (hwnd = this.Gui.Hwnd)
+      If (hwnd = this.Gui.Hwnd) {
+         DllCall("ReleaseCapture")
          PostMessage(0xA1, 2, , , this.Gui)   ; WM_NCLBUTTONDOWN, HTCAPTION
+      }
          
    }
    Static RefreshData(*) {
