@@ -10,9 +10,9 @@
 /*
 TODO
 - seems to stay on all desktops, this is desired
-- Cache the lat/long of a location, maybe in a binary file or settings.
-- Maybe one section per location, then have a lat/lon value
 - Moon phases for night, https://www.amp-what.com/unicode/search/moon
+- Hourly air quality data? Wider GUI
+- If changing days/interval, need to restart due to size changes, auto handle this?
 - https://github.com/Makin-Things/weather-icons (SVG, some are animated)
 */
 class Weather {
@@ -279,6 +279,9 @@ class Weather {
          this.hourIncrement := IniRead(this.iniFile, A_ComputerName, "Hours Increment", 3) * 1
          this.RefreshData()
          IniWrite(place, this.iniFile, A_ComputerName, "Loc")
+         IniWrite(this.CC, this.iniFile, place, "CC")
+         IniWrite(this.Lat, this.iniFile, place, "Lat")
+         IniWrite(this.Lon, this.iniFile, place, "Lon")
       } Else
          this.Ctl.updated.Text := "Location lookup failed for " place
    }
@@ -573,6 +576,13 @@ class Weather {
     * @returns {Integer | Object}  n.lat, n.lon, n.name
     */
    Static GeocodeName(place) {
+      ; See if location is cached
+      If (lat := IniRead(this.iniFile, place, "Lat", 0)) {
+         lon := IniRead(this.iniFile, place, "Lon", 0)
+         CC  := IniRead(this.iniFile, place, "CC", "us")
+         return {lat: Number(lat), lon: Number(lon), name: place, CC: CC}
+      }
+      ; Query location data from openstreetmap
       url := "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&q=" UriEncode(place)
       try {
          http := ComObject("WinHttp.WinHttpRequest.5.1")
