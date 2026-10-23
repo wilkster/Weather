@@ -580,7 +580,7 @@ class Weather {
       If (lat := IniRead(this.iniFile, place, "Lat", 0)) {
          lon := IniRead(this.iniFile, place, "Lon", 0)
          CC  := IniRead(this.iniFile, place, "CC", "us")
-         return {lat: Number(lat), lon: Number(lon), name: place, CC: CC}
+         return {lat: Round(lat,7), lon: Round(lon,7), name: place, CC: CC}
       }
       ; Query location data from openstreetmap
       url := "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&q=" UriEncode(place)
@@ -600,7 +600,7 @@ class Weather {
 
       RegExMatch(txt, '"display_name":"((?:[^"\\]|\\.)*)"', &mName)
       RegExMatch(txt, '"country_code":"([a-z]{2})"', &mCC)
-      return {lat: Number(mLat[1]), lon: Number(mLon[1]), name: mName ? mName[1] : place, CC: mCC ? mCC[1] : ""}
+      return {lat: Round(mLat[1],7), lon: Round(mLon[1],7), name: mName ? mName[1] : place, CC: mCC ? mCC[1] : ""}
       
       UriEncode(s) {
          n := StrPut(s, "UTF-8") - 1
