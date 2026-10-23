@@ -10,6 +10,8 @@
 /*
 TODO
 - seems to stay on all desktops, this is desired
+- Cache the lat/long of a location, maybe in a binary file or settings.
+- Maybe one section per location, then have a lat/lon value
 x don't update if locked and refresh when coming out of sleep (after a short delay)
 x RMB to stay on top
 x Save position by computer name
@@ -27,7 +29,9 @@ class Weather {
    static Ctl      := {}
    static Menu     := ""
    Static ActiveIcon := ""
-   /*
+   Static forecastDays := 2
+   Static hourIncrement := 3
+  /*
       WMO Weather Codes Reference
       Code	      Description
       0	         Clear sky
@@ -152,8 +156,11 @@ class Weather {
             this.CC      := obj.CC
             this.NeedGeo := false
          }
-         this.Interval := IniRead(this.iniFile,A_ComputerName,"Refresh Minutes",30) * 60*1000
-         this.OnTop    := IniRead(this.iniFile, A_ComputerName, "OnTop", 0)
+         this.Interval      := IniRead(this.iniFile,A_ComputerName,"Refresh Minutes",30) * 60*1000
+         this.OnTop         := IniRead(this.iniFile, A_ComputerName, "OnTop", 0)
+         this.forecastDays  := IniRead(this.iniFile, A_ComputerName, "Forecast Days", 2) * 1
+         this.hourIncrement := IniRead(this.iniFile, A_ComputerName, "Hours Increment", 3) * 1
+
       } Else {
          this.NeedGeo := false
          IniWrite(this.Interval/60000, this.iniFile, A_ComputerName, "Refresh Minutes")
@@ -170,15 +177,17 @@ class Weather {
          ym adds a margin
          r8 means 8 rows
       */
+     ; TODO - make Forecast_days a parameter and this value is (days-1)/3
+      this.nForecasts := round((this.forecastDays - 1) * 24 / this.hourIncrement) ; worst case 24 hours in the future / 3 hrs = 8 updates
       this.Ctl.loc     := this.AddTextCtl("w165",                this.Name,    "s9  cA6ADC8",      "Segoe UI")
-      this.Ctl.temp    := this.AddTextCtl("w80 y+0 Right",       "---°",       "s28 cFFFFFF Bold", "Segoe UI")
+      this.Ctl.temp    := this.AddTextCtl("w78 y+0 Right",       "---°",       "s28 cFFFFFF Bold", "Segoe UI")
       this.Ctl.AQI     := this.AddTextCtl("w40 x+0 yp+12 Right", "---",        "s20 cFFFFFF Bold", "Segoe UI")
       this.Ctl.AQIlab  := this.AddTextCtl("w30 x+2 yp+13",       "aqi",        "s9  cA6ADC8 Norm", "Segoe UI")
       this.Ctl.cond    := this.AddTextCtl("w240 xm y+12",        "Loading...", "s11 cd5defa Norm", "Segoe UI")
       this.Ctl.detail  := this.AddTextCtl("w240 y+8",                ,         "s10 cbcc3e1",      "Segoe UI")
       this.Ctl.tod     := this.AddTextCtl("w240 y+8",           ,              "s10 cF9E2AF",      "Consolas")
       this.Ctl.tom     := this.AddTextCtl("w240 y+2",            ,             "s10 cb5a47f",      "Consolas")
-      this.Ctl.hourly  := this.AddTextCtl("w240 r9 y+8",             ,         "s10 cCDD6F4",      "Consolas")
+      this.Ctl.hourly  := this.AddTextCtl("w240 r" this.nForecasts+1 " y+8",,  "s10 cCDD6F4",      "Consolas")
       this.Ctl.updated := this.AddTextCtl("w240",                ,             "s8  c6C7086",      "Segoe UI")
       this.Ctl.Icon    := g.AddPicture("H96 W96 X150 Y0")
 
@@ -199,9 +208,6 @@ class Weather {
       g.Show("NoActivate x" X " y" Y " W260")
       this.gui.opt(this.OnTop ? "+AlwaysOnTop" : "-AlwaysOnTop")
       this.RefreshData()
-
-      ; Auto Refresh
-      SetTimer(this.cbUpdateData, this.Interval)
 
       OnExit this.SavePosition.bind(this)
    }
@@ -266,15 +272,16 @@ class Weather {
     */
    Static SetLocation(place, ItemPos, MyMenu) {
       If (obj := this.GeocodeName(place)) {
-         this.Lat  := obj.lat
-         this.Lon  := obj.lon
-         this.CC   := obj.CC
-         this.name := place
-         this.Interval := IniRead(this.iniFile, A_ComputerName, "Refresh Minutes", 30) * 60 * 1000
+         this.Lat           := obj.lat
+         this.Lon           := obj.lon
+         this.CC            := obj.CC
+         this.NeedGeo       := false
+         this.name          := place
+         this.Interval      := IniRead(this.iniFile, A_ComputerName, "Refresh Minutes", 30) * 60 * 1000
+         this.forecastDays  := IniRead(this.iniFile, A_ComputerName, "Forecast Days", 2) * 1
+         this.hourIncrement := IniRead(this.iniFile, A_ComputerName, "Hours Increment", 3) * 1
          this.RefreshData()
-         SetTimer(this.cbUpdateData, this.Interval)
          IniWrite(place, this.iniFile, A_ComputerName, "Loc")
-         this.NeedGeo := false
       } Else
          this.Ctl.updated.Text := "Location lookup failed for " place
    }
@@ -283,10 +290,12 @@ class Weather {
     */
    static SavePosition(ExitReason, ExitCode) {
       this.Gui.GetPos(&X, &Y)
-      IniWrite(This.Name,this.iniFile,A_ComputerName,"Loc")
+      IniWrite(this.Name, this.iniFile, A_ComputerName, "Loc")
       IniWrite(X, this.iniFile, A_ComputerName, "X")
       IniWrite(Y, this.iniFile, A_ComputerName, "Y")
-      IniWrite(this.Interval/60000,this.iniFile,A_ComputerName,"Refresh Minutes")
+      IniWrite(this.Interval / 60000, this.iniFile, A_ComputerName, "Refresh Minutes")
+      IniWrite(this.forecastDays, this.iniFile, A_ComputerName, "Forecast Days")
+      IniWrite(this.hourIncrement, this.iniFile, A_ComputerName, "Hours Increment")
    }
    /**
     * Drag the GUI on a message since we don't have a caption
@@ -299,8 +308,9 @@ class Weather {
          
    }
    Static RefreshData(*) {
-      this.UpdateWeather()
-      this.UpdateAirQuality()
+      ok := this.UpdateWeather()
+      ok := this.UpdateAirQuality() && ok
+      SetTimer(this.cbUpdateData, ok ? this.Interval : -60000)
       this.PruneMemory()
       OutputDebug("WeatherWidget: Updated Weather and Air Quality")
    }
@@ -335,14 +345,15 @@ class Weather {
             throw Error("HTTP " http.Status)
       } catch Any as e {
          this.Ctl.updated.Text := "Update failed " FormatTime(, "h:mm tt") " (" e.Message ")"
-         SetTimer(this.cbUpdateData, -60000)
-         Return
+         Return false
       }
       Try {
          renderer(http.ResponseText)
       } Catch Any As e {
          this.Ctl.updated.Text := "Render Error " FormatTime(, "h:mm tt") " (" e.Message ")"
+         Return false
       }
+      Return true
    }
 
    /**
@@ -352,10 +363,10 @@ class Weather {
     */
    Static UpdateAirQuality(*) {
       If (!this.EnsureGeo())
-         Return
+         Return false
       ; TODO - utilize hourly AQI data: add "&hourly=us_aqi" to the URL
       url := "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" this.Lat "&longitude=" this.Lon "&current=us_aqi"
-      this.Query(url, this.RenderAQI.Bind(this))
+      Return this.Query(url, this.RenderAQI.Bind(this))
    }
 
    /**
@@ -363,13 +374,13 @@ class Weather {
     */
    Static UpdateWeather(*) {
       If (!this.EnsureGeo())
-         Return
+         Return false
       url := "https://api.open-meteo.com/v1/forecast?latitude=" this.Lat "&longitude=" this.Lon
          . "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code,is_day"
          . "&hourly=weather_code,temperature_2m,precipitation_probability,wind_speed_10m,wind_direction_10m"
          . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
-         . "&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=2&timezone=auto"
-      this.Query(url, this.RenderWeather.Bind(this))
+         . "&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=" this.forecastDays "&timezone=auto"
+      Return this.Query(url, this.RenderWeather.Bind(this))
    }
 
    /**
@@ -378,7 +389,12 @@ class Weather {
     */
    Static RenderAQI(json) {
       cur := this.Section(json, "current")
-      aqi := Integer(this.Value(cur, "us_aqi"))
+      v := this.Value(cur, "us_aqi")
+      If (!IsNumber(v)) {
+         this.Ctl.AQI.Text := "---"
+         Return
+      }
+      aqi := Integer(v)
       this.Ctl.AQI.Text := aqi
       this.Ctl.AQI.SetFont("C" this.AqiColor(aqi))
    }
@@ -434,16 +450,17 @@ class Weather {
 
       ; Hourly slots every 3 hours for the rest of the day
       RegExMatch(cur, '"time":"[^T]+T(\d+)', &m)
+      ; Hr data starts at today's midnight
       temps := this.List(hrs, "temperature_2m")
       pops  := this.List(hrs, "precipitation_probability")
       winds := this.List(hrs, "wind_speed_10m")
       dirs  := this.List(hrs, "wind_direction_10m")
       codes := this.List(hrs, "weather_code")
       out   := " Time  Temp    Prec    Wind`n"
-      h     := Integer(m[1]) + 1
+      h     := Integer(m[1]) + 1 ; Next hour
       ; Build the 3 hours forecast for the next 
-      while (A_Index <= 8 && h < temps.Length) {
-         t := temps[h + 1] 
+      while (A_Index <= this.nForecasts && h < temps.Length) {
+         t := temps[h + 1]  ; 0 hour is midnight, 1am is 1
          p := pops[h + 1]
          w := winds[h + 1]
          d := Compass(dirs[h + 1])
@@ -452,7 +469,7 @@ class Weather {
             . this.Pad(IsNumber(t) ? (Round(t) "°") : "--", 5) . " " . wc
             . this.Pad(IsNumber(p) ? (p "%") : "--", 5)
             . "  " . this.Pad(IsNumber(w) ? (Round(w) " mph ") : ("--"),8) d "`n"
-         h += 3
+         h += this.hourIncrement
       }
       this.Ctl.hourly.Text := RTrim(out, "`n")
       this.Ctl.updated.Text := "Updated " FormatTime(, "h:mm tt")
@@ -618,7 +635,6 @@ SetupEventMonitoring() {
          If (wParam = 0x7) { ; WTS_SESSION_LOCK
       } Else If (wParam = 0x8) { ; WTS_SESSION_UNLOCK
          OutputDebug("WeatherWidget: Session Change")
-         SetTimer(Weather.cbUpdateData, Weather.Interval)
          SetTimer(Weather.cbUpdateData, -10000)
       }
    }
@@ -629,13 +645,12 @@ SetupEventMonitoring() {
       Static PBT_APMRESUMESUSPEND := 0x7, PBT_APMRESUMEAUTOMATIC := 18
       Switch wParam {
          Case PBT_APMRESUMESUSPEND :
-            SetTimer(Weather.cbUpdateData, Weather.Interval)
             SetTimer(Weather.cbUpdateData, -10000)
             OutputDebug("WeatherWidget: Resume from Suspension")
          Default :
       }
    }
-
+   ; display configuration changed, just refesh the window in case it was on a disabled display
    OnDisplayChange(wParam, lParam, msg, hwnd) {
       OutputDebug("Redrawing Window due to refresh:" wParam)
       SetTimer(RefreshGui, -500)   ; let the display stack settle first
