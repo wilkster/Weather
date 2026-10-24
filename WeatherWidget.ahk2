@@ -156,19 +156,22 @@ class Weather {
             this.CC      := obj.CC
             this.NeedGeo := false
          }
-         this.Interval      := IniRead(this.iniFile, A_ComputerName, "Refresh Minutes", 30) * 60 * 1000
-         this.OnTop         := IniRead(this.iniFile, A_ComputerName, "OnTop", this.OnTop)
-         this.forecastDays  := IniRead(this.iniFile, A_ComputerName, "Forecast Days", this.forecastDays) * 1
-         this.hourIncrement := IniRead(this.iniFile, A_ComputerName, "Hours Increment", this.hourIncrement) * 1
-         this.maxRows       := IniRead(this.iniFile, A_ComputerName, "Max Rows", this.maxRows) * 1
+         this.Interval      := Integer(IniRead(this.iniFile, A_ComputerName, "Refresh Minutes", 30))
+         this.OnTop         := Integer(IniRead(this.iniFile, A_ComputerName, "OnTop", this.OnTop))
+         this.forecastDays  := Integer(IniRead(this.iniFile, A_ComputerName, "Forecast Days", this.forecastDays))
+         this.hourIncrement := Integer(IniRead(this.iniFile, A_ComputerName, "Hours Increment", this.hourIncrement))
+         this.maxRows       := Integer(IniRead(this.iniFile, A_ComputerName, "Max Rows", this.maxRows))
 
       } Else {
          this.NeedGeo := false
-         IniWrite(this.Interval/60000, this.iniFile, A_ComputerName, "Refresh Minutes")
+         IniWrite(this.Interval, this.iniFile, A_ComputerName, "Refresh Minutes")
          IniWrite(this.Name, this.iniFile, A_ComputerName, "Loc")
          IniWrite(this.Name, this.iniFile, "Locations", "Loc1")
       }
       ; Build the GUI, should be DPI aware, composting helps with flicker
+      if (this.gui)
+         this.gui.Destroy()
+
       g := this.Gui := Gui("-Caption +ToolWindow +Border +DPIScale +E0x02000000")
       g.BackColor := "1E1E2E"
       g.MarginX := 10, g.MarginY := 8
@@ -179,18 +182,15 @@ class Weather {
          r8 means 8 rows
       */
       dw := "w260"
-      ; BUG - nForecasts is too simplistic assumes today is over, dymaically adjust hourly control
-      ;       Maybe set max intervarls instead
-      this.Ctl.loc     := this.AddTextCtl("w170",                this.Name,    "s9  cA6ADC8",      "Segoe UI")
-      this.Ctl.temp    := this.AddTextCtl("w78 y+2 Right",       "---°",       "s28 cFFFFFF Bold", "Segoe UI")
-      this.Ctl.AQI     := this.AddTextCtl("w40 x+0 yp+12 Right" , "---",       "s20 cFFFFFF Bold", "Segoe UI")
-      this.Ctl.AQIlab  := this.AddTextCtl("w30 x+2 yp+13"       ,"aqi",        "s9  cA6ADC8 Norm", "Segoe UI")
-      this.Ctl.cond    := this.AddTextCtl(dw " xm y+18"         ,"Loading...", "s11 cd5defa Norm", "Segoe UI")
-      this.Ctl.detail  := this.AddTextCtl(dw " y+8",,                          "s10 cbcc3e1",      "Segoe UI")
-      this.Ctl.tod     := this.AddTextCtl(dw " y+8",,                          "s10 cF9E2AF",      "Consolas")
-      this.Ctl.tom     := this.AddTextCtl(dw " y+2",,                          "s10 cb5a47f",      "Consolas")
-      this.Ctl.hourly  := this.AddTextCtl(dw " r" this.maxRows " y+8",,        "s10 cCDD6F4",      "Consolas")
-      this.Ctl.updated := this.AddTextCtl(dw,,                                 "s8  c6C7086",      "Segoe UI")
+      this.Ctl.loc     := this.AddTextCtl("w170",                this.Name,    "s9  cA6ADC8",      "Segoe UI")  ; subtext0
+      this.Ctl.temp    := this.AddTextCtl("w78 y+2 Right",       "---°",       "s28 cCDD6F4 Bold", "Segoe UI")  ; text
+      this.Ctl.AQI     := this.AddTextCtl("w40 x+0 yp+12 Right", "---",        "s20 cCDD6F4 Bold", "Segoe UI")  ; text (or by level, below)
+      this.Ctl.AQIlab  := this.AddTextCtl("w30 x+2 yp+13",       "aqi",        "s9  cA6ADC8 Norm", "Segoe UI")  ; subtext0
+      this.Ctl.cond    := this.AddTextCtl(dw " xm y+18",         "Loading...", "s11 cB4BEFE Norm", "Segoe UI")  ; lavender
+      this.Ctl.detail  := this.AddTextCtl(dw " y+8",,                          "s10 cBAC2DE",      "Segoe UI")  ; subtext1
+      this.Ctl.daily   := this.AddTextCtl(dw " y+8 r" this.forecastDays+1,,    "s10 cCDD6F4",      "Consolas")  ; text
+      this.Ctl.hourly  := this.AddTextCtl(dw " y+8 r" this.maxRows+1 " y+8",,  "s10 cBAC2DE",      "Consolas")  ; subtext1
+      this.Ctl.updated := this.AddTextCtl(dw,,                                 "s8  c7F849C",      "Segoe UI")  ; overlay1
       this.Ctl.Icon    := g.AddPicture("H96 W96 X160 Y0")
 
       ; Pretty up the window
@@ -215,7 +215,29 @@ class Weather {
       g.Show("NoActivate x" X " y" Y)
       this.RefreshData()
 
+      ; in Init, after the controls are created
+      this.Ctl.daily.GetPos(,,, &h1)
+      this.Ctl.hourly.GetPos(,,, &h2)
+      this.rowH1 := h1 // (this.forecastDays + 1)
+      this.rowH2 := h2 // (this.maxRows + 1)      
+
       OnExit this.SaveOnExit.bind(this)
+   }
+   /**
+    * Call after adjusting one of the three settings that impact daily/hourly numbers below
+    */
+   Static ApplyRowCounts() {
+      c := this.Ctl
+      gap := 8 * A_ScreenDPI / 96          ; matches your y+8, or measure it once in Init
+      c.daily.GetPos(, &dY)
+      dH := this.rowH1 * (this.forecastDays + 1)
+      hH := this.rowH2 * (this.maxRows + 1)
+      hY := dY + dH + gap
+      c.daily.Move(, , , dH)
+      c.hourly.Move(, hY, , hH)
+      c.updated.Move(, hY + hH + gap)
+      this.Gui.Show("NoActivate AutoSize")
+      this.RefreshData()
    }
    /**
     * Read the locations in the order they are in the ini file
@@ -268,24 +290,50 @@ class Weather {
          for idx,loc in this.ReadLocations(this.iniFile) {
             this.menu.add(loc, this.setlocation.bind(this))
             if (loc = this.Name)
-               this.menu.Check(loc)               
+               this.menu.Check(loc)
             if idx >= maxLoc
                break
          }
       } else
          this.Menu.Add("Refresh now", this.cbUpdateData)
       this.Menu.add()
+      this.Menu.Add("Display Forecast Days",   this.BuildNumMenu("forecastDays", "Forecast Days", 10))
+      this.Menu.Add("Display Max Hourly Rows", this.BuildNumMenu("maxRows", "Max Rows", 15))
+      this.Menu.Add("Display Hourly Interval", this.BuildNumMenu("hourIncrement", "Hours Increment", 6))
+      this.Menu.Add("Refresh Minute Interval", this.BuildNumMenu("Interval", "Refresh Minutes", 12, 5))
+      ; TODO add one for refresh interval, but need to deal with the math, maybe split 
+      this.Menu.Add("Edit Settings File", (*) => Run(this.iniFile))  ; Creates a new menu item.
+      this.Menu.Add()
       mn := "Always On Top"
       this.Menu.Add(mn, Toggle)  ; Creates a new menu item.
       If (this.OnTop)
          this.Menu.Check(mn)
-      this.Menu.Add("Edit Settings File", (*) => Run(this.iniFile))  ; Creates a new menu item.
       this.Menu.Add("Exit", (*) => ExitApp())
       Toggle(*) {
          this.OnTop := !this.OnTop
          IniWrite(this.OnTop, this.iniFile, A_ComputerName, "OnTop")
          this.gui.opt(this.OnTop ? "+AlwaysOnTop" : "-AlwaysOnTop")
-      } 
+      }
+   }
+
+   ; Builds a 1-10 submenu for the property named prop, checking the current value
+   static BuildNumMenu(prop, iniKey, mx:=10, inc:=1) {
+      sub := Menu()
+      Loop mx {
+         I := Integer(A_Index * inc)
+         sub.Add(I, this.SetNum.Bind(this, prop, iniKey, sub))
+         if (I = this.%prop%)
+            sub.Check(I)
+      }
+      return sub
+   }
+   ; Set the menu with a new value on submenu selections
+   static SetNum(prop, iniKey, sub, itemName, *) {
+      Try sub.Uncheck(this.%prop%) ; skip if value was set not on the menu
+      this.%prop% := Integer(itemName) ; set the new value
+      sub.Check(itemName)
+      IniWrite(this.%prop%, this.iniFile, A_ComputerName, iniKey)
+      this.ApplyRowCounts()   ; from the earlier no-recreate approach
    }
    
    /**
@@ -311,10 +359,10 @@ class Weather {
          MsgBox("Failed to get a location for`n" place, "Location Error", 0x30)
       }
       ; User may have changed these by hand
-      this.Interval      := IniRead(this.iniFile, A_ComputerName, "Refresh Minutes", 30) * 60 * 1000
-      this.forecastDays  := IniRead(this.iniFile, A_ComputerName, "Forecast Days", this.forecastDays) * 1
-      this.hourIncrement := IniRead(this.iniFile, A_ComputerName, "Hours Increment", this.hourIncrement) * 1
-      this.maxRows       := IniRead(this.iniFile, A_ComputerName, "Max Rows", this.maxRows) * 1
+      this.Interval      := Integer(IniRead(this.iniFile, A_ComputerName, "Refresh Minutes", 30))
+      this.forecastDays  := Integer(IniRead(this.iniFile, A_ComputerName, "Forecast Days", this.forecastDays) )
+      this.hourIncrement := Integer(IniRead(this.iniFile, A_ComputerName, "Hours Increment", this.hourIncrement) )
+      this.maxRows       := Integer(IniRead(this.iniFile, A_ComputerName, "Max Rows", this.maxRows) )
       this.RefreshData()
    }
    /**
@@ -325,10 +373,15 @@ class Weather {
       IniWrite(this.Name, this.iniFile, A_ComputerName, "Loc")
       IniWrite(X, this.iniFile, A_ComputerName, "X")
       IniWrite(Y, this.iniFile, A_ComputerName, "Y")
-      IniWrite(this.Interval / 60000, this.iniFile, A_ComputerName, "Refresh Minutes")
-      IniWrite(this.forecastDays, this.iniFile, A_ComputerName, "Forecast Days")
-      IniWrite(this.hourIncrement, this.iniFile, A_ComputerName, "Hours Increment")
-      IniWrite(this.maxRows, this.iniFile, A_ComputerName, "Max Rows")
+      this.writeIfBlank(this.Interval, A_ComputerName, "Refresh Minutes")
+      this.writeIfBlank(this.forecastDays, A_ComputerName, "Forecast Days")
+      this.writeIfBlank(this.hourIncrement, A_ComputerName, "Hours Increment")
+      this.writeIfBlank(this.maxRows, A_ComputerName, "Max Rows")
+   }
+   Static writeIfBlank(val, section, tag) {
+      If (IniRead(this.iniFile, section, tag, "xxx") == "xxx") {
+         IniWrite(val, this.iniFile, section, tag)
+      }
    }
    /**
     * Drag the GUI on a message since we don't have a caption
@@ -364,7 +417,7 @@ class Weather {
    Static RefreshData(*) {
       ok := this.UpdateWeather()
       ok := this.UpdateAirQuality() && ok
-      SetTimer(this.cbUpdateData, ok ? this.Interval : -60000)
+      SetTimer(this.cbUpdateData, ok ? this.Interval * 60000 : -60000)
       this.PruneMemory()
       OutputDebug("WeatherWidget: Updated Weather and Air Quality for " this.name)
    }
@@ -432,8 +485,9 @@ class Weather {
       url := "https://api.open-meteo.com/v1/forecast?latitude=" this.Lat "&longitude=" this.Lon
          . "&current=weather_code,temperature_2m,wind_speed_10m,wind_direction_10m,apparent_temperature,relative_humidity_2m,is_day"
          . "&hourly=weather_code,temperature_2m,precipitation_probability,wind_speed_10m,wind_direction_10m,is_day"
-         . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
-         . "&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=" max(this.forecastDays,2) "&timezone=auto"
+         . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max"
+         . "&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=" this.forecastDays 
+         . "&forecast_hours=" this.maxRows * this.hourIncrement + 2 "&timezone=auto"
       Return this.Query(url, this.RenderWeather.Bind(this))
    }
 
@@ -481,42 +535,52 @@ class Weather {
          . "   Hum " Round(this.Value(cur, "relative_humidity_2m")) "%"
          . "   Wind " Round(this.Value(cur, "wind_speed_10m")) " mph " d
       ; Today
-      hi := Round(this.List(day, "temperature_2m_max")[1])
-      lo := Round(this.List(day, "temperature_2m_min")[1])
-      pop := this.List(day, "precipitation_probability_max")[1]
-      this.Ctl.tod.Text := "Today    H " hi "° L " lo "° Precip " (IsNumber(pop) ? pop : "--") "%"
-      ; Tomorrow
-      hi := Round(this.List(day, "temperature_2m_max")[2])
-      lo := Round(this.List(day, "temperature_2m_min")[2])
-      pop := this.List(day, "precipitation_probability_max")[2]
-      this.Ctl.tom.Text := "Tomorrow H " hi "° L " lo "° Precip " (IsNumber(pop) ? pop : "--") "%"
-
-      ; Hourly slots every 3 hours for the rest of the day
-      RegExMatch(cur, '"time":"[^T]+T(\d+)', &m)
-      ; Hr data starts at today's midnight
+      ;-----------------------------------------------------------------------
+      ; Daily Forecast
+      ;-----------------------------------------------------------------------
+      out := "Day  ―――――――Temp――――― Prec   Wind`n"
+      Loop this.forecastDays {
+         i         := A_Index
+         hi        := this.lpad(Round(this.List(day, "temperature_2m_max")[i]),4)
+         lo        := this.lpad(Round(this.List(day, "temperature_2m_min")[i]),4)
+         ws        := Round(this.List(day, "wind_speed_10m_max")[i])
+         pop       := this.List(day, "precipitation_probability_max")[i]
+         fDate     := Trim(StrReplace(this.List(day, "time")[i],'-'),'"')
+         dayOfWeek := this.rpad(FormatTime(fDate, "ddd"),3)
+         wc        := this.emoji.get(Integer(this.List(day, "weather_code")[i]), "🌈")
+         out       .= dayOfWeek " " hi "° to " lo "° " wc (IsNumber(pop) ? this.lpad(pop,4) : "--") "%" this.lpad(ws,4) " mph`n"
+      }
+      this.Ctl.daily.Text := RTrim(out)
+      ;-----------------------------------------------------------------------
+      ; Hourly data starts at the current hour (forecast_hours), not midnight
+      ;-----------------------------------------------------------------------
+      out   := "   Time  Temp――  Prec    Wind`n"
+      times := this.List(hrs, "time")
       temps := this.List(hrs, "temperature_2m")
       pops  := this.List(hrs, "precipitation_probability")
       winds := this.List(hrs, "wind_speed_10m")
       dirs  := this.List(hrs, "wind_direction_10m")
       codes := this.List(hrs, "weather_code")
       dns   := this.List(hrs, "is_day")
-      out   := "   Time  Temp    Prec    Wind`n"
-      h     := Integer(m[1]) + 1 ; Next hour
-      ; Build the 3 hours forecast for the next 
-      while (A_Index <= this.maxRows && h < temps.Length) {
-         dn := dns[h + 1]  ; 0 hour is midnight, 1am is 1
-         t := temps[h + 1]  ; 0 hour is midnight, 1am is 1
-         p := pops[h + 1]
-         w := winds[h + 1]
-         d := Compass(dirs[h + 1])
-         wc := this.emoji.get(Integer(codes[h+1]),"🌈")
-         out .= daynight(dn) . this.Pad(this.Hour12(h), 6)
-            . this.Pad(IsNumber(t) ? (Round(t) "°") : "--", 5) . " " . wc
-            . this.Pad(IsNumber(p) ? (p "%") : "--", 5)
-            . "  " . this.Pad(IsNumber(w) ? (Round(w) " mph ") : ("--"),8) d "`n"
-         h += this.hourIncrement
+      RegExMatch(times[1], "T(\d+)", &m)
+      h0    := Integer(m[1])      ; clock hour of array element 1
+      i     := 2                  ; element 2 = next hour
+      while (A_Index <= this.maxRows && i <= temps.Length) {
+         hr := Mod(h0 + i - 1, 24)   ; clock hour for this element
+         dn := dns[i]
+         t  := temps[i]
+         p  := pops[i]
+         w  := winds[i]
+         d  := Compass(dirs[i])
+         wc := this.emoji.get(Integer(codes[i]), "🌈")
+         out .= daynight(dn) . this.lpad(this.Hour12(hr), 6)
+            . this.lpad(IsNumber(t) ? (Round(t) "°") : "--", 5) . " " . wc
+            . this.lpad(IsNumber(p) ? (p "%") : "--", 5)
+            . "  " . this.lpad(IsNumber(w) ? (Round(w) " mph ") : ("--"), 8) d "`n"
+         i += this.hourIncrement
       }
       this.Ctl.hourly.Text := RTrim(out, "`n")
+
       this.Ctl.updated.Text := "Updated " FormatTime(, "h:mm tt")
       ; Added for tray and icons
       If (this.Icons.has(code)) {
@@ -555,7 +619,8 @@ class Weather {
    static Value(sec, key)     => RegExMatch(sec, '"' key '":(-?[\d.]+)', &m) ? m[1] : ""
    static List(sec, key)      => RegExMatch(sec, '"' key '":\[([^\]]*)\]', &m) ? StrSplit(m[1], ",") : []
    static Hour12(h)           => ((h := Mod(h, 24)) = 0 ? 12 : h > 12 ? h - 12 : h) (h < 12 ? " AM" : " PM")
-   static Pad(s, n)           => Format("{:" n "}", s)
+   static lpad(s, n)          => Format("{:" n "}", s)
+   static rpad(s, n)          => Format("{:-" n "}", s)
    ;----------------------------------------------------------------------------
    ; Round the corners of the GUI for windows 11, ignored on Windows 10
    ; Also draws a rounded border
