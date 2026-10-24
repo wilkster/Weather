@@ -548,7 +548,7 @@ class Weather {
          fDate     := Trim(StrReplace(this.List(day, "time")[i],'-'),'"')
          dayOfWeek := this.rpad(FormatTime(fDate, "ddd"),3)
          wc        := this.emoji.get(Integer(this.List(day, "weather_code")[i]), "🌈")
-         out       .= dayOfWeek " " hi "° to " lo "° " wc (IsNumber(pop) ? this.lpad(pop,4) : "--") "%" this.lpad(ws,4) " mph`n"
+         out       .= dayOfWeek " " lo "° to " hi "° " wc (IsNumber(pop) ? this.lpad(pop,4) : "--") "%" this.lpad(ws,4) " mph`n"
       }
       this.Ctl.daily.Text := RTrim(out)
       ;-----------------------------------------------------------------------
