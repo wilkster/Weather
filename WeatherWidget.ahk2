@@ -10,23 +10,27 @@
 /*
 TODO
 - seems to stay on all desktops, this is desired
+- Don't write any settings that aren't changed in the app unless they don't already exist
+- Add F or C option in settings, also windspeed, temperature_unit=fahrenheit, wind_speed_unit=mph
+  current_units "wind_speed_10m": "mp/h" has it embedded, "temperature_2m": "°F"
 - Moon phases for night, https://www.amp-what.com/unicode/search/moon
 - Hourly air quality data? Wider GUI
-- If changing days/interval, need to restart due to size changes, auto handle this?
+- If changing days/interval, need to restart due to size changes, auto handle this? Better calculation of rows.
 - https://github.com/Makin-Things/weather-icons (SVG, some are animated)
 */
 class Weather {
-   static Lat      := 34.0447
-   static Lon      := -118.2493
-   static CC       := "us"
-   static Name     := "Los Angeles, CA"
-   static Interval := 30 * 60 * 1000   ; ms
-   static Gui      := ""
-   static Ctl      := {}
-   static Menu     := ""
-   Static ActiveIcon := ""
-   Static forecastDays := 2
+   static Lat           := 34.0447
+   static Lon           := -118.2493
+   static CC            := "us"
+   static Name          := "Los Angeles, CA"
+   static Interval      := 30 * 60 * 1000   ; ms
+   static Gui           := ""
+   static Ctl           := {}
+   static Menu          := ""
+   Static ActiveIcon    := ""
+   Static forecastDays  := 2
    Static hourIncrement := 3
+   Static maxRows       := 8
   /*
       WMO Weather Codes Reference
       Code	      Description
@@ -141,8 +145,8 @@ class Weather {
    static Init() {
       this.Menu := Menu()
       this.iniFile := A_ScriptDir "\WeatherWidget.ini"
-      this.NeedGeo := true
-      this.OnTop := false
+      this.NeedGeo := 1
+      this.OnTop := 0
       If (FileExist(this.iniFile)) {
          ; Set default locations
          this.Name := IniRead(this.iniFile, A_ComputerName, "Loc", this.Name)
@@ -152,10 +156,11 @@ class Weather {
             this.CC      := obj.CC
             this.NeedGeo := false
          }
-         this.Interval      := IniRead(this.iniFile,A_ComputerName,"Refresh Minutes",30) * 60*1000
-         this.OnTop         := IniRead(this.iniFile, A_ComputerName, "OnTop", 0)
-         this.forecastDays  := IniRead(this.iniFile, A_ComputerName, "Forecast Days", 2) * 1
-         this.hourIncrement := IniRead(this.iniFile, A_ComputerName, "Hours Increment", 3) * 1
+         this.Interval      := IniRead(this.iniFile, A_ComputerName, "Refresh Minutes", 30) * 60 * 1000
+         this.OnTop         := IniRead(this.iniFile, A_ComputerName, "OnTop", this.OnTop)
+         this.forecastDays  := IniRead(this.iniFile, A_ComputerName, "Forecast Days", this.forecastDays) * 1
+         this.hourIncrement := IniRead(this.iniFile, A_ComputerName, "Hours Increment", this.hourIncrement) * 1
+         this.maxRows       := IniRead(this.iniFile, A_ComputerName, "Max Rows", this.maxRows) * 1
 
       } Else {
          this.NeedGeo := false
@@ -173,9 +178,9 @@ class Weather {
          ym adds a margin
          r8 means 8 rows
       */
-     ; TODO - make Forecast_days a parameter and this value is (days-1)/3
-      dw := "w250"
-      this.nForecasts := round((this.forecastDays - 1) * 24 / this.hourIncrement) ; worst case 24 hours in the future / 3 hrs = 8 updates
+      dw := "w260"
+      ; BUG - nForecasts is too simplistic assumes today is over, dymaically adjust hourly control
+      ;       Maybe set max intervarls instead
       this.Ctl.loc     := this.AddTextCtl("w170",                this.Name,    "s9  cA6ADC8",      "Segoe UI")
       this.Ctl.temp    := this.AddTextCtl("w78 y+2 Right",       "---°",       "s28 cFFFFFF Bold", "Segoe UI")
       this.Ctl.AQI     := this.AddTextCtl("w40 x+0 yp+12 Right" , "---",       "s20 cFFFFFF Bold", "Segoe UI")
@@ -184,30 +189,52 @@ class Weather {
       this.Ctl.detail  := this.AddTextCtl(dw " y+8",,                          "s10 cbcc3e1",      "Segoe UI")
       this.Ctl.tod     := this.AddTextCtl(dw " y+8",,                          "s10 cF9E2AF",      "Consolas")
       this.Ctl.tom     := this.AddTextCtl(dw " y+2",,                          "s10 cb5a47f",      "Consolas")
-      this.Ctl.hourly  := this.AddTextCtl(dw " r" this.nForecasts+1 " y+8",,   "s10 cCDD6F4",      "Consolas")
+      this.Ctl.hourly  := this.AddTextCtl(dw " r" this.maxRows " y+8",,        "s10 cCDD6F4",      "Consolas")
       this.Ctl.updated := this.AddTextCtl(dw,,                                 "s8  c6C7086",      "Segoe UI")
       this.Ctl.Icon    := g.AddPicture("H96 W96 X160 Y0")
 
       ; Pretty up the window
       this.Round11Corners(g.hWnd)
-      this.DropShadow()
+      this.DropShadow(g.hWnd)
 
+      ; Hand mouse drag/tray click/RMB Menu
       OnMessage(0x201, this.Drag.bind(this))
+      OnMessage(0x232, this.SnapToWorkArea.bind(this))   ; WM_EXITSIZEMOVE
       OnMessage(0x404, this.TrayMessage.Bind(this))
+      g.OnEvent("ContextMenu", (*) => this.ShowRMB())
+
+      ; Callback for refresh
       this.cbUpdateData := this.RefreshData.bind(this)
 
-      g.OnEvent("ContextMenu", (*) => this.ShowRMB())
       ; Keep on visible monitors, measure first
       g.Show("NoActivate Hide AutoSize")
       g.GetPos(,,&W, &H)
       X := Min(IniRead(this.iniFile, A_ComputerName, "X", 0), SysGet(78) - W * A_ScreenDPI / 96)
       Y := Min(IniRead(this.iniFile, A_ComputerName, "Y", 0), SysGet(79) - H * A_ScreenDPI / 96)
-      g.Show("NoActivate x" X " y" Y " Autosize")
       this.gui.opt(this.OnTop ? "+AlwaysOnTop" : "-AlwaysOnTop")
+      g.Show("NoActivate x" X " y" Y)
       this.RefreshData()
 
-      OnExit this.SavePosition.bind(this)
+      OnExit this.SaveOnExit.bind(this)
    }
+   /**
+    * Read the locations in the order they are in the ini file
+    * loc=... is optional
+    * Allows user to reorder as desired
+    * @param iniFile Name of ini file
+    * @param {String} section 
+    * @returns {Array} Location names
+    */
+   Static ReadLocations(iniFile, section := "Locations") {
+      cities := []
+      for line in StrSplit(IniRead(iniFile, section), "`n", "`r") {
+         pos := InStr(line, "=")
+         city := Trim(pos ? SubStr(line, pos + 1) : line)
+         if (city != "")
+            cities.Push(city)
+      }
+      return cities
+   } 
    /**
     * Helper method to add a text control with a font, returns the control
     * @param options size/placement options
@@ -234,17 +261,17 @@ class Weather {
    Static BuildRMB() {
       this.Menu.Delete()
       this.Menu := Menu()
-
+      ; Read the whole section to so retain order in the file vs by number
+      ; This allows duplicate entries or just loc=.......
       If (FileExist(this.iniFile)) {
-         ; Up to 15 locations
-         Loop 15 {
-            If (loc := IniRead(this.iniFile, "Locations", "Loc" A_Index, "")) {
-               this.menu.add(loc, this.setlocation.bind(this))
-               if (loc = this.Name)
-                  this.menu.Check(loc)
-            } Else
-               Break
-         }         
+         maxLoc :=IniRead(this.iniFile, "Default", "Max Locations", 50)
+         for idx,loc in this.ReadLocations(this.iniFile) {
+            this.menu.add(loc, this.setlocation.bind(this))
+            if (loc = this.Name)
+               this.menu.Check(loc)               
+            if idx >= maxLoc
+               break
+         }
       } else
          this.Menu.Add("Refresh now", this.cbUpdateData)
       this.Menu.add()
@@ -274,21 +301,26 @@ class Weather {
          this.CC            := obj.CC
          this.NeedGeo       := false
          this.name          := place
-         this.Interval      := IniRead(this.iniFile, A_ComputerName, "Refresh Minutes", 30) * 60 * 1000
-         this.forecastDays  := IniRead(this.iniFile, A_ComputerName, "Forecast Days", 2) * 1
-         this.hourIncrement := IniRead(this.iniFile, A_ComputerName, "Hours Increment", 3) * 1
-         this.RefreshData()
          IniWrite(place, this.iniFile, A_ComputerName, "Loc")
          IniWrite(this.CC, this.iniFile, place, "CC")
          IniWrite(this.Lat, this.iniFile, place, "Lat")
          IniWrite(this.Lon, this.iniFile, place, "Lon")
-      } Else
+      } Else {
+         this.NeedGeo          := TRUE
          this.Ctl.updated.Text := "Location lookup failed for " place
+         MsgBox("Failed to get a location for`n" place, "Location Error", 0x30)
+      }
+      ; User may have changed these by hand
+      this.Interval      := IniRead(this.iniFile, A_ComputerName, "Refresh Minutes", 30) * 60 * 1000
+      this.forecastDays  := IniRead(this.iniFile, A_ComputerName, "Forecast Days", this.forecastDays) * 1
+      this.hourIncrement := IniRead(this.iniFile, A_ComputerName, "Hours Increment", this.hourIncrement) * 1
+      this.maxRows       := IniRead(this.iniFile, A_ComputerName, "Max Rows", this.maxRows) * 1
+      this.RefreshData()
    }
    /**
     * Save Gui location on exit
     */
-   static SavePosition(ExitReason, ExitCode) {
+   static SaveOnExit(ExitReason, ExitCode) {
       this.Gui.GetPos(&X, &Y)
       IniWrite(this.Name, this.iniFile, A_ComputerName, "Loc")
       IniWrite(X, this.iniFile, A_ComputerName, "X")
@@ -296,6 +328,7 @@ class Weather {
       IniWrite(this.Interval / 60000, this.iniFile, A_ComputerName, "Refresh Minutes")
       IniWrite(this.forecastDays, this.iniFile, A_ComputerName, "Forecast Days")
       IniWrite(this.hourIncrement, this.iniFile, A_ComputerName, "Hours Increment")
+      IniWrite(this.maxRows, this.iniFile, A_ComputerName, "Max Rows")
    }
    /**
     * Drag the GUI on a message since we don't have a caption
@@ -305,18 +338,39 @@ class Weather {
          DllCall("ReleaseCapture")
          PostMessage(0xA1, 2, , , this.Gui)   ; WM_NCLBUTTONDOWN, HTCAPTION
       }
-         
    }
+   /**
+    * Snap the GUI so it is fully enclosed by a monitor
+    */
+   Static SnapToWorkArea(wParam, lParam, msg, hwnd) {
+      If (hwnd != this.Gui.Hwnd)
+         Return
+      hMon := DllCall("MonitorFromWindow", "Ptr", hwnd, "UInt", 2, "Ptr")   ; MONITOR_DEFAULTTONEAREST
+      mi := Buffer(40, 0)
+      NumPut("UInt", 40, mi)                                                 ; MONITORINFO.cbSize
+      DllCall("GetMonitorInfo", "Ptr", hMon, "Ptr", mi)
+      L := NumGet(mi, 20, "Int"), T := NumGet(mi, 24, "Int")                 ; rcWork
+      R := NumGet(mi, 28, "Int"), B := NumGet(mi, 32, "Int")
+      WinGetPos(&x, &y, &w, &h, this.Gui)
+      nx := Max(L, Min(x, R - w))
+      ny := Max(T, Min(y, B - h))
+      If (nx != x || ny != y)
+         WinMove(nx, ny, , , this.Gui)
+   }
+   /**
+    * Refresh the weather and Air Quality data
+    * Reschedule the timer depending on result
+    */
    Static RefreshData(*) {
       ok := this.UpdateWeather()
       ok := this.UpdateAirQuality() && ok
       SetTimer(this.cbUpdateData, ok ? this.Interval : -60000)
       this.PruneMemory()
-      OutputDebug("WeatherWidget: Updated Weather and Air Quality")
+      OutputDebug("WeatherWidget: Updated Weather and Air Quality for " this.name)
    }
    /**
     * Resolve lat/lon from the location name if needed.
-    * @returns {Integer} true if coordinates are available, false if the lookup failed
+    * @returns {Boolean} true if coordinates are available, false if the lookup failed
     */
    Static EnsureGeo() {
       If (!this.NeedGeo)
@@ -379,7 +433,7 @@ class Weather {
          . "&current=weather_code,temperature_2m,wind_speed_10m,wind_direction_10m,apparent_temperature,relative_humidity_2m,is_day"
          . "&hourly=weather_code,temperature_2m,precipitation_probability,wind_speed_10m,wind_direction_10m,is_day"
          . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
-         . "&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=" this.forecastDays "&timezone=auto"
+         . "&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=" max(this.forecastDays,2) "&timezone=auto"
       Return this.Query(url, this.RenderWeather.Bind(this))
    }
 
@@ -399,25 +453,14 @@ class Weather {
       this.Ctl.AQI.SetFont("C" this.AqiColor(aqi))
    }
    Static AqiColor(aqi) {
-      if (aqi = "")
-         return ""
-
-      if (aqi < 0)
-         return ""
-
-      if (aqi <= 50)
-         return "1dd31d"
-      else if (aqi <= 100)
-         return "cece1f"
-      else if (aqi <= 150)
-         return "c9721b"
-      else if (aqi <= 200)
-         return "f93434"
-      else if (aqi <= 300)
-         return "99004C"
-      else
-         return "7E0023"
-   }   
+      Return (aqi = "" || aqi < 0) ? "ffffff"
+      : aqi <= 50 ? "1dd31d"
+      : aqi <= 100 ? "cece1f"
+      : aqi <= 150 ? "c9721b"
+      : aqi <= 200 ? "f93434"
+      : aqi <= 300 ? "99004C"
+      : "7E0023"
+   }
    /**
     * Render the weather related text fields with updated data
     * @param json Json text to parse
@@ -460,7 +503,7 @@ class Weather {
       out   := "   Time  Temp    Prec    Wind`n"
       h     := Integer(m[1]) + 1 ; Next hour
       ; Build the 3 hours forecast for the next 
-      while (A_Index <= this.nForecasts && h < temps.Length) {
+      while (A_Index <= this.maxRows && h < temps.Length) {
          dn := dns[h + 1]  ; 0 hour is midnight, 1am is 1
          t := temps[h + 1]  ; 0 hour is midnight, 1am is 1
          p := pops[h + 1]
@@ -509,16 +552,10 @@ class Weather {
    }
 
    static Section(json, name) => RegExMatch(json, '"' name '":\{([^}]*)\}', &m) ? m[1] : ""
-   static Value(sec, key) => RegExMatch(sec, '"' key '":(-?[\d.]+)', &m) ? m[1] : ""
-   static List(sec, key) => RegExMatch(sec, '"' key '":\[([^\]]*)\]', &m) ? StrSplit(m[1], ",") : []
-
-   static Hour12(h) => ((h := Mod(h, 24)) = 0 ? 12 : h > 12 ? h - 12 : h) (h < 12 ? " AM" : " PM")
-
-   static Pad(s, n) {
-      while (StrLen(s) < n)
-         s := " " s
-      return s
-   }
+   static Value(sec, key)     => RegExMatch(sec, '"' key '":(-?[\d.]+)', &m) ? m[1] : ""
+   static List(sec, key)      => RegExMatch(sec, '"' key '":\[([^\]]*)\]', &m) ? StrSplit(m[1], ",") : []
+   static Hour12(h)           => ((h := Mod(h, 24)) = 0 ? 12 : h > 12 ? h - 12 : h) (h < 12 ? " AM" : " PM")
+   static Pad(s, n)           => Format("{:" n "}", s)
    ;----------------------------------------------------------------------------
    ; Round the corners of the GUI for windows 11, ignored on Windows 10
    ; Also draws a rounded border
@@ -539,9 +576,9 @@ class Weather {
    }   
    /**
     * Give the window a drop shadow, since no caption it won't do it by default
+    * Also gives it the standard windows 11 drop shadow
     */
-   Static DropShadow() {
-      hwnd := this.Gui.Hwnd
+   Static DropShadow(hwnd) {
       DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 2, "Int*", 2, "UInt", 4)   ; DWMWA_NCRENDERING_POLICY = DWMNCRP_ENABLED
       mar := Buffer(16, 0)
       NumPut("Int", 1, "Int", 1, "Int", 1, "Int", 1, mar)   ; left, right, top, bottom
@@ -625,17 +662,19 @@ class Weather {
  * On unlock or resume from sleep, refresh immediatly
  */
 SetupEventMonitoring() {
-   Static WM_POWERBROADCAST := 0x0218
+   Static WM_POWERBROADCAST    := 0x0218
+   Static WM_DISPLAYCHANGE     := 0x7E
+   Static WM_WTSSESSION_CHANGE := 0x2B1
    ; Registers to receive notification when the system is suspended or resumed
    Static hwndNotification := 0
-   hwndNotification := DllCall("RegisterSuspendResumeNotification", "ptr", A_ScriptHwnd, "uint", 0)
+   hwndNotification := DllCall("RegisterSuspendResumeNotification", "Ptr", A_ScriptHwnd, "UInt", 0, "Ptr")
    ; Registers the specified window to receive session change notifications
    ; DllCall("Wtsapi32.dll\WTSRegisterSessionNotification", "ptr", A_ScriptHwnd, "uint", 1)
    DllCall("Wtsapi32\WTSRegisterSessionNotification", "Ptr", A_ScriptHwnd, "UInt", 0) ; NOTIFY_FOR_THIS_SESSION = 0
-   OnMessage(WM_POWERBROADCAST, PowerChangeEvent)
-   ; Session change information
-   OnMessage(0x2B1, cbWM_WTSSESSION_CHANGE)
-   OnMessage(0x7E, OnDisplayChange)   ; WM_DISPLAYCHANGE
+   ; Message Hanlders are closures
+   OnMessage(WM_POWERBROADCAST, cbPowerChangeEvent)
+   OnMessage(WM_WTSSESSION_CHANGE, cbSessionChange)
+   OnMessage(WM_DISPLAYCHANGE, cbDisplayChange)   ; WM_DISPLAYCHANGE
 
    /*==============================================================================
    Suspend resume messages, 7 means the user also initiated it vs system background
@@ -645,18 +684,18 @@ SetupEventMonitoring() {
    OnExit UnRegisterPower
    Return
    ; Session Change lock/unlock
-   cbWM_WTSSESSION_CHANGE(wParam, lParam, msg, hwnd) {
-         If (wParam = 0x7) { ; WTS_SESSION_LOCK
-      } Else If (wParam = 0x8) { ; WTS_SESSION_UNLOCK
+   cbSessionChange(wParam, lParam, msg, hwnd) {
+      Static WTS_SESSION_LOCK := 0x7, WTS_SESSION_UNLOCK := 0x8
+      If (wParam = WTS_SESSION_LOCK) {
+         SetTimer(Weather.cbUpdateData, 0)
+      } Else If (wParam = WTS_SESSION_UNLOCK) {
          OutputDebug("WeatherWidget: Session Change")
-         SetTimer(Weather.cbUpdateData, -10000)
+         SetTimer(Weather.cbUpdateData, -5000)
       }
    }
    ; Resume from sleep
-   PowerChangeEvent(wParam, lParam, Msg, hWnd) {
-      Static WTS_SESSION_LOCK := "0x7", WTS_SESSION_UNLOCK := "0x8", WM_WTSSESSION_CHANGE := "0x02B1", WTS_SESSION_LOGON := "0x5", WTS_SESSION_LOGOFF := "0x6"
-      Static changeText := { 10: "PBT_APMPOWERSTATUSCHANGE", 18: "PBT_APMRESUMEAUTOMATIC", 7: "PBT_APMRESUMESUSPEND", 4: "PBT_APMSUSPEND", 32787: "PBT_POWERSETTINGCHANGE" }
-      Static PBT_APMRESUMESUSPEND := 0x7, PBT_APMRESUMEAUTOMATIC := 18
+   cbPowerChangeEvent(wParam, lParam, Msg, hWnd) {
+      Static PBT_APMRESUMESUSPEND := 0x7
       Switch wParam {
          Case PBT_APMRESUMESUSPEND :
             SetTimer(Weather.cbUpdateData, -10000)
@@ -664,20 +703,22 @@ SetupEventMonitoring() {
          Default :
       }
    }
-   ; display configuration changed, just refesh the window in case it was on a disabled display
-   OnDisplayChange(wParam, lParam, msg, hwnd) {
-      OutputDebug("Redrawing Window due to refresh:" wParam)
-      SetTimer(RefreshGui, -500)   ; let the display stack settle first
-   }
    /**
     * Hack if the GUI was on a disabled monitor, the composting will not
     * update the window itself
+    * wParam = new bit depth
+    * lParam is resolution (low word is width, high word is height)
     */
-   RefreshGui() {
-      ; RDW_INVALIDATE|RDW_ERASE|RDW_FRAME|RDW_ALLCHILDREN|RDW_UPDATENOW
-      Weather.Gui.Opt("-E0x02000000")
-      Weather.Gui.Opt("+E0x02000000")
-      DllCall("RedrawWindow", "Ptr", Weather.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x585)
+   cbDisplayChange(wParam, lParam, msg, hwnd) {
+      OutputDebug("Redrawing Window due to refresh:")
+      SetTimer(RefreshGui, -4000)   ; let the display stack settle first
+      Return
+      Static RefreshGui() {
+         ; RDW_INVALIDATE|RDW_ERASE|RDW_FRAME|RDW_ALLCHILDREN|RDW_UPDATENOW
+         Weather.Gui.Opt("-E0x02000000")
+         Weather.Gui.Opt("+E0x02000000")
+         DllCall("RedrawWindow", "Ptr", Weather.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x585)
+      }
    }
    ;----------------------------------------------------------------------
    ; On exit, unregister handlers
@@ -689,5 +730,14 @@ SetupEventMonitoring() {
    }
 }
 
+class MenuDarkMode {
+   static Enable(mode := 2) {   ; 0 Default, 1 AllowDark (follows system), 2 ForceDark, 3 ForceLight
+      static hMod := DllCall("LoadLibrary", "Str", "uxtheme", "Ptr")
+      DllCall(DllCall("GetProcAddress", "Ptr", hMod, "Ptr", 135, "Ptr"), "Int", mode)
+      DllCall(DllCall("GetProcAddress", "Ptr", hMod, "Ptr", 136, "Ptr"))
+   }
+}
+; Start things up here
+MenuDarkMode.Enable(1)   ; use 1 to follow the system theme instead of forcing dark
 Weather.Init()
 SetupEventMonitoring()
