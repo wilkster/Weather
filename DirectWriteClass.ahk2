@@ -40,29 +40,35 @@ class D2DText {
     * @param {String} [font="Segoe UI Emoji"] Font family name.
     * @param {Number} [size=10] Font size in points (same unit as AHK's s10 option).
     * @param {Integer} [fg=0xFFFFFF] Text color, 0xRRGGBB.
-    * @param {Integer} [bg=0x1E1E1E] Background color, 0xRRGGBB.
+    * @param {Integer} [bg=0x1E1E1E] Optional Background color, 0xRRGGBB. Use current GUI backcolor if left blank
     * @param {Number} [pad=0] Padding between control edge and text, in DIPs (1/96 inch).
     * @throws {OSError} If a Direct2D or DirectWrite call fails.
     */
-   __New(ctrl, text := "", font := "Segoe UI Emoji", size := 22, fg := 0xFFFFFF, bg := 0x1E1E1E, pad := 0) {
+   __New(ctrl, text := "", font := "Segoe UI Emoji", size := 22, fg := 0xFFFFFF, bg := "", weight:=400, pad := 0) {
       D2DText._Init()
-      this._ctrl := ctrl
-      this.sf := 96 / DllCall("GetDpiForWindow", "Ptr", this._ctrl.Hwnd, "UInt")
-      this._text := text
-      this._font := font
-      this._size := size
-      this._fg   := fg
-      this._bg   := bg
-      this._pad  := pad
-      this._align := 0      ; 0 = left, 1 = right, 2 = center
-      this._wrap  := true
-      this._rt := this._brush := this._fmt := 0
+      this._ctrl   := ctrl
+      this.sf      := 96 / DllCall("GetDpiForWindow", "Ptr", this._ctrl.Hwnd, "UInt")
+      this._text   := text
+      this._font   := font
+      this._size   := size
+      this._weight := weight ; 400 is default for normal
+      this._fg     := D2DText._ToRGB(fg)
+      this._bg     := D2DText._ToRGB(bg = "" ? D2DText._GuiBack(ctrl.Gui) : bg)
+      this._pad    := pad
+      this._align  := 0      ; 0   = left ,      1 = right, 2 = center
+      this._wrap   := true
+      this._rt     := this._brush := this._fmt := 0
       this._CreateFormat()
       this._CreateTarget()
       this._HookPaint()
       this.Draw()
    }
-
+   Static _GuiBack(g) {
+      If (c := g.BackColor) != ""
+         Return Integer("0x" c)                  ; BackColor returns "RRGGBB" without 0x
+      c := DllCall("GetSysColor", "Int", 15, "UInt")   ; COLOR_3DFACE, returned as 0x00BBGGRR
+      Return (c & 0xFF) << 16 | (c & 0xFF00) | (c >> 16 & 0xFF)
+   }
    /** Unhooks the paint handlers and releases the render target, brush and text format. */
    __Delete() {
       this._UnhookPaint()
@@ -91,16 +97,17 @@ class D2DText {
     * @param {Number|String} [size=""] Size in points. Blank = GUI's current font size.
     * @param {Integer|String} [fg=""] Text color, 0xRRGGBB. Blank = see above.
     * @param {Integer|String} [bg=""] Background color, 0xRRGGBB. Blank = see above.
+    * @param {Integer} [weight=400] Font weight (400 = normal, 700 = bold).
     * @param {Number} [pad=0] Padding in DIPs (1/96 inch).
     * @returns {D2DText} The renderer. The control is available as .Ctrl, and the renderer as ctrl.D2D.
     *     
     */
-   static Create(g, options := "", text := "", font := "", size := "", fg := "", bg := "", pad := 0) {
+   static Create(g, options := "", text := "", font := "", size := "", fg := "", bg := "", weight:="", pad := 0) {
       ; The native control is created with the text so r/w auto-sizing works and screen readers still see it.
       ctrl := g.AddText(options, text)
 
       ; Font defaults: read the LOGFONT the control inherited from the GUI
-      if font = "" || size = "" {
+      if font = "" || size = "" || weight = "" {
          lf := Buffer(92, 0)
          hFont := SendMessage(0x31, 0, 0, ctrl)                  ; WM_GETFONT
          if hFont && DllCall("GetObject", "Ptr", hFont, "Int", 92, "Ptr", lf) {
@@ -109,11 +116,15 @@ class D2DText {
                font := StrGet(lf.Ptr + 28, 32)                   ; lfFaceName
             if size = ""
                size := Round(-NumGet(lf, 0, "Int") * 72 / dpi, 1) ; lfHeight (px) -> points
+            if weight = ""
+               weight := NumGet(lf, 16, "Int")                   ; lfWeight
          }
          if font = ""
             font := "Segoe UI"
          if size = ""
             size := 9
+         if !weight                                              ; "" or 0 -> normal
+            weight := 400
       }
 
       ; Background: option > GUI BackColor > system dialog color
@@ -134,7 +145,7 @@ class D2DText {
             fg := D2DText._SysColor(8)                           ; COLOR_WINDOWTEXT
       }
 
-      inst := D2DText(ctrl, text, font, size, fg, bg, pad)
+      inst := D2DText(ctrl, text, font, size, fg, bg, weight, pad)
       ctrl.D2D := inst           ; keeps the instance alive as long as the control exists
       return inst
    }
@@ -309,7 +320,7 @@ class D2DText {
       fn := NumGet(vt, A_PtrSize * 15, "Ptr")
       fmt := 0
       hr := DllCall(fn, "Ptr", dw, "WStr", this._font, "Ptr", 0
-         , "Int", 400, "Int", 0, "Int", 5, "Float", this._size *96/72, "WStr", "en-us", "Ptr*", &fmt, "Int")
+         , "Int", this._weight, "Int", 0, "Int", 5, "Float", this._size *96/72, "WStr", "en-us", "Ptr*", &fmt, "Int")
       if hr
          throw OSError(hr, , "CreateTextFormat")
       this._fmt := fmt
@@ -364,7 +375,7 @@ class D2DText {
     */
    static _Color(rgb, a := 1.0) {
       c := Buffer(16)
-      rgb := this._ToRGB(rgb)
+      rgb := D2DText._ToRGB(rgb)
       NumPut("Float", (rgb >> 16 & 0xFF) / 255, "Float", (rgb >> 8 & 0xFF) / 255
          , "Float", (rgb & 0xFF) / 255, "Float", a, c)
       return c
@@ -462,6 +473,7 @@ Notes:
 - The instance and its control reference each other (ctrl.D2D), so __Delete runs at script exit,
   not when the GUI is destroyed.
 - Emoji fallback fonts can increase line height; call SetLineHeight() to match native r<N> sizing.
+- Not yet handling dynamic DPI if moved between monitors with different DPIs, would need to handle DPI change
 */
 
 /*

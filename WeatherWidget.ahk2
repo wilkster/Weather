@@ -111,34 +111,34 @@ class Weather {
       99, "Thunderstorm"        ;"Thunderstorm, hail"
    )
    Static emoji := map(
-      0, "☀",         ;"Clear",
-      1, "⛅",        ;"Mainly clear",
-      2, "⛅",        ;"Partly cloudy",
-      3, "☁",         ;"Overcast",
-      45, "☁",        ;"Fog",
-      48, "☁",        ;"Rime fog",
-      51, "🌦",        ;"Light drizzle",
-      53, "🌦",        ;"Drizzle",
+       0, "☀",         ;"Clear",
+       1, "🌤",        ;"Mainly clear",
+       2, "⛅",        ;"Partly cloudy",
+       3, "☁",         ;"Overcast",
+      45, "🌁",        ;"Fog",
+      48, "🌫️",        ;"Rime fog",
+      51, "🌧️",        ;"Light drizzle",
+      53, "🌧️",        ;"Drizzle",
       55, "☔",       ;"Heavy drizzle",
-      56, "☔",       ;"Freezing drizzle",
-      57, "☔",       ;"Freezing drizzle",
-      61, "☔",       ;"Light rain",
+      56, "🧊",       ;"Freezing drizzle",
+      57, "🧊",       ;"Freezing drizzle",
+      61, "🌧️",       ;"Light rain",
       63, "☔",        ;"Rain",
       65, "☔",        ;"Heavy rain",
-      66, "⛈",        ;"Freezing rain",
-      67, "⛈",        ;"Freezing rain",
-      71, "❄",        ;"Light snow",
+      66, "🧊",        ;"Freezing rain",
+      67, "🧊",        ;"Freezing rain",
+      71, "🌨",        ;"Light snow",
       73, "❄",        ;"Snow",
       75, "⛄",       ;"Heavy snow",
       77, "❄",        ;"Snow grains",
       80, "☔",       ;"Light showers",
       81, "☔",       ;"Showers",
-      82, "⛈",        ;"Heavy showers",
+      82, "🌧",        ;"Heavy showers",
       85, "❄",        ;"Snow showers",
-      86, "❄",        ;"Heavy snow showers",
-      95, "🌩",        ;"Thunderstorm",
-      96, "⛈",        ;"Thunderstorm, hail",
-      99, "⛈"         ;"Thunderstorm, hail"
+      86, "⛄",        ;"Heavy snow showers",
+      95, "🌩️",        ;"Thunderstorm",
+      96, "🌩️",        ;"Thunderstorm, hail",
+      99, "🌩️"         ;"Thunderstorm, hail"
    )
    /**
     * Called during program startup
@@ -189,14 +189,18 @@ class Weather {
       this.Ctl.temp    := this.AddTextCtl("w78 y+2 Right",       "---°",       "s28 cCDD6F4 Bold", "Segoe UI")  ; text
       this.Ctl.AQI     := this.AddTextCtl("w40 x+0 yp+12 Right", "---",        "s20 cCDD6F4 Bold", "Segoe UI")  ; text (or by level, below)
       this.Ctl.AQIlab  := this.AddTextCtl("w30 x+2 yp+13",       "aqi",        "s9  cA6ADC8 Norm", "Segoe UI")  ; subtext0
-      this.Ctl.cond    := this.AddTextCtl(dw " xm y+20",         "Loading...", "s12 cB4BEFE Norm", "Segoe UI")  ; lavender
-      this.Ctl.detail  := this.AddTextCtl(dw " y+8",,                          "s10 cBAC2DE",      "Segoe UI")  ; subtext1
+      this.Ctl.cond    := this.AddTextCtl(dw " xm y+20",         "Loading...", "s13 cB4BEFE Norm", "Segoe UI")  ; lavender
+      this.Ctl.detail  := this.AddTextCtl(dw " y+8",,                          "s11 cBAC2DE",      "Segoe UI")  ; subtext1, note further spacing uses this font
       If (this.useD2D) {
-         this.Ctl.daily := this.Gui.AddD2DText(dw " y+8 r" this.forecastDays + 1, , "Consolas", 10, 0xCDD6F4, 0x1E1E2E)   ; Direct Write for emojis
-         this.Ctl.hourly := this.Gui.AddD2DText(dw " y+8 r" this.maxRows + 1, , "Consolas", 10, 0xCDD6F4, 0x1E1E2E)   ; Direct Write for emojis
+         this.Ctl.srss   := this.Gui.AddD2DText(dw " y+8", ,                        "Segoe UI", 12, "f3f4cd")   ; Direct Write for emojis
+         this.Ctl.srss.SetAlign("Center")
+         this.Gui.SetFont("S11", "Consolas") ; Impacts spacing, leave a little extra due to emoji heights
+         this.Ctl.daily  := this.Gui.AddD2DText(dw " y+8 r" this.forecastDays + 1,, "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
+         this.Ctl.hourly := this.Gui.AddD2DText(dw " y+8 r" this.maxRows + 1,,      "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
       } Else {
-         this.Ctl.daily   := this.AddTextCtl(dw " y+8 r" this.forecastDays+1,,    "s10 cCDD6F4",      "Consolas")  ; text
-         this.Ctl.hourly  := this.AddTextCtl(dw " y+8 r" this.maxRows+1 " y+8",,  "s10 cBAC2DE",      "Consolas")  ; subtext1
+         this.Ctl.srss    := this.AddTextCtl(dw " y+8 Center", ,                "S12 cf3f4cd",      "Segoe UI")
+         this.Ctl.daily   := this.AddTextCtl(dw " y+8 r" this.forecastDays+1,,  "s10 cCDD6F4",      "Consolas")  ; text
+         this.Ctl.hourly  := this.AddTextCtl(dw " y+8 r" this.maxRows+1 " y+8",,"s10 cBAC2DE",      "Consolas")  ; subtext1
       }
       this.Ctl.updated := this.AddTextCtl(dw,,                                 "s8  c7F849C",      "Segoe UI")  ; overlay1
       this.Ctl.Icon    := g.AddPicture("H96 W96 X160 Y0")
@@ -495,7 +499,7 @@ class Weather {
       url := "https://api.open-meteo.com/v1/forecast?latitude=" this.Lat "&longitude=" this.Lon
          . "&current=weather_code,temperature_2m,wind_speed_10m,wind_direction_10m,apparent_temperature,relative_humidity_2m,is_day"
          . "&hourly=weather_code,temperature_2m,precipitation_probability,wind_speed_10m,wind_direction_10m,is_day"
-         . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max"
+         . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset"
          . "&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=" this.forecastDays 
          . "&forecast_hours=" this.maxRows * this.hourIncrement + 2 "&timezone=auto"
       Return this.Query(url, this.RenderWeather.Bind(this))
@@ -540,15 +544,18 @@ class Weather {
       tf    := Round(this.Value(cur, "temperature_2m"))
       d     := Compass(this.Value(cur, "wind_direction_10m"))
       this.Ctl.temp.Text := tf "°"
-      this.Ctl.cond.Text := this.Codes.Get(code, "Code " code)
-      this.Ctl.detail.Text := (tf < 40 ? "❄ " : "") . "Feels " Round(this.Value(cur, "apparent_temperature")) "°"
+      sr := "☀↑  " StrLower(FormatTime(RegExReplace(this.List(day, "sunrise")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
+      ss := "🌙↓  " StrLower(FormatTime(RegExReplace(this.List(day, "sunset")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
+      this.Ctl.srss.Text := sr "           " ss
+      this.Ctl.cond.Text := this.Codes.Get(code, "Code " code) ; . sr " " ss
+      this.Ctl.detail.Text := (tf < 40 ? "❄ " : tf > 90 ? "🌡️ " : "") . "Feels " Round(this.Value(cur, "apparent_temperature")) "°"
          . "   Hum " Round(this.Value(cur, "relative_humidity_2m")) "%"
          . "   Wind " Round(this.Value(cur, "wind_speed_10m")) " mph " d
       ; Today
       ;-----------------------------------------------------------------------
       ; Daily Forecast
       ;-----------------------------------------------------------------------
-      out := "Day  ―――――――Temp――――― Prec   Wind`n"
+      out := "Day  ―――――――Temp―――――  Prec  Wind`n"
       Loop this.forecastDays {
          i         := A_Index
          hi        := this.lpad(Round(this.List(day, "temperature_2m_max")[i]),4)
@@ -564,7 +571,7 @@ class Weather {
       ;-----------------------------------------------------------------------
       ; Hourly data starts at the current hour (forecast_hours), not midnight
       ;-----------------------------------------------------------------------
-      out   := "   Time  Temp――  Prec    Wind`n"
+      out   := "   Time   Temp    Prec    Wind`n"
       times := this.List(hrs, "time")
       temps := this.List(hrs, "temperature_2m")
       pops  := this.List(hrs, "precipitation_probability")
@@ -606,8 +613,9 @@ class Weather {
          If (this.useD2D) {
             this.Ctl.hourly.SetColors(, (isDay ? "1E1E2E" : "11111B"))
             this.Ctl.daily.SetColors(, (isDay ? "1E1E2E" : "11111B"))
+            this.Ctl.srss.SetColors(, (isDay ? "1E1E2E" : "11111B"))
+            ;this.Ctl.daily.Draw()
          }
-         this.Ctl.daily.Draw()
          If (FileExist(Icon)) {
             If (Icon != this.ActiveIcon) {
                TraySetIcon(Icon)
@@ -624,11 +632,7 @@ class Weather {
             return "?"
          return ["↓","↙N","↙","↙E","←","↖E","↖","↖S","↑","S↗","↗","W↗","→","W↘","↘","N↘"][Mod(Round(deg / 22.5), 16) + 1]
       }
-      Static daynight(dn) {
-         if (!IsNumber(dn))
-            return "?"
-         return ["🌙","🔅"][dn+1]
-      }
+      static daynight(dn) => !IsNumber(dn) ? "?" : dn ? "🌞" : "🌙"
    }
 
    static Section(json, name) => RegExMatch(json, '"' name '":\{([^}]*)\}', &m) ? m[1] : ""
