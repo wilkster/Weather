@@ -7,6 +7,7 @@
 ;@Ahk2Exe-SetMainIcon Partly Cloudy.ico
 #SingleInstance Off
 #Requires AutoHotkey v2.0
+#include DirectWriteClass.ahk2
 /*
 TODO
 - seems to stay on all desktops, this is desired
@@ -147,6 +148,7 @@ class Weather {
       this.iniFile := A_ScriptDir "\WeatherWidget.ini"
       this.NeedGeo := 1
       this.OnTop := 0
+      this.useD2D := 1
       If (FileExist(this.iniFile)) {
          ; Set default locations
          this.Name := IniRead(this.iniFile, A_ComputerName, "Loc", this.Name)
@@ -161,6 +163,7 @@ class Weather {
          this.forecastDays  := Integer(IniRead(this.iniFile, A_ComputerName, "Forecast Days", this.forecastDays))
          this.hourIncrement := Integer(IniRead(this.iniFile, A_ComputerName, "Hours Increment", this.hourIncrement))
          this.maxRows       := Integer(IniRead(this.iniFile, A_ComputerName, "Max Rows", this.maxRows))
+         this.useD2D        := Integer(IniRead(this.iniFile, A_ComputerName, "UseD2D", this.useD2D))
 
       } Else {
          this.NeedGeo := false
@@ -186,10 +189,15 @@ class Weather {
       this.Ctl.temp    := this.AddTextCtl("w78 y+2 Right",       "---°",       "s28 cCDD6F4 Bold", "Segoe UI")  ; text
       this.Ctl.AQI     := this.AddTextCtl("w40 x+0 yp+12 Right", "---",        "s20 cCDD6F4 Bold", "Segoe UI")  ; text (or by level, below)
       this.Ctl.AQIlab  := this.AddTextCtl("w30 x+2 yp+13",       "aqi",        "s9  cA6ADC8 Norm", "Segoe UI")  ; subtext0
-      this.Ctl.cond    := this.AddTextCtl(dw " xm y+18",         "Loading...", "s11 cB4BEFE Norm", "Segoe UI")  ; lavender
+      this.Ctl.cond    := this.AddTextCtl(dw " xm y+20",         "Loading...", "s12 cB4BEFE Norm", "Segoe UI")  ; lavender
       this.Ctl.detail  := this.AddTextCtl(dw " y+8",,                          "s10 cBAC2DE",      "Segoe UI")  ; subtext1
-      this.Ctl.daily   := this.AddTextCtl(dw " y+8 r" this.forecastDays+1,,    "s10 cCDD6F4",      "Consolas")  ; text
-      this.Ctl.hourly  := this.AddTextCtl(dw " y+8 r" this.maxRows+1 " y+8",,  "s10 cBAC2DE",      "Consolas")  ; subtext1
+      If (this.useD2D) {
+         this.Ctl.daily := this.Gui.AddD2DText(dw " y+8 r" this.forecastDays + 1, , "Consolas", 10, 0xCDD6F4, 0x1E1E2E)   ; Direct Write for emojis
+         this.Ctl.hourly := this.Gui.AddD2DText(dw " y+8 r" this.maxRows + 1, , "Consolas", 10, 0xCDD6F4, 0x1E1E2E)   ; Direct Write for emojis
+      } Else {
+         this.Ctl.daily   := this.AddTextCtl(dw " y+8 r" this.forecastDays+1,,    "s10 cCDD6F4",      "Consolas")  ; text
+         this.Ctl.hourly  := this.AddTextCtl(dw " y+8 r" this.maxRows+1 " y+8",,  "s10 cBAC2DE",      "Consolas")  ; subtext1
+      }
       this.Ctl.updated := this.AddTextCtl(dw,,                                 "s8  c7F849C",      "Segoe UI")  ; overlay1
       this.Ctl.Icon    := g.AddPicture("H96 W96 X160 Y0")
 
@@ -452,12 +460,14 @@ class Weather {
             throw Error("HTTP " http.Status)
       } catch Any as e {
          this.Ctl.updated.Text := "Update failed " FormatTime(, "h:mm tt") " (" e.Message ")"
+         OutputDebug("Update failed " FormatTime(, "h:mm tt") " (" e.Message ")")
          Return false
       }
       Try {
          renderer(http.ResponseText)
       } Catch Any As e {
          this.Ctl.updated.Text := "Render Error " FormatTime(, "h:mm tt") " (" e.Message ")"
+         OutputDebug("Render Error " FormatTime(, "h:mm tt") " (" e.Message ")")
          Return false
       }
       Return true
@@ -592,6 +602,12 @@ class Weather {
                Icon := AltIcon
          }
          this.Gui.BackColor := isDay ? "1E1E2E" : "11111B"
+         ; Have set these specifically, and in hex
+         If (this.useD2D) {
+            this.Ctl.hourly.SetColors(, (isDay ? "1E1E2E" : "11111B"))
+            this.Ctl.daily.SetColors(, (isDay ? "1E1E2E" : "11111B"))
+         }
+         this.Ctl.daily.Draw()
          If (FileExist(Icon)) {
             If (Icon != this.ActiveIcon) {
                TraySetIcon(Icon)
@@ -611,7 +627,7 @@ class Weather {
       Static daynight(dn) {
          if (!IsNumber(dn))
             return "?"
-         return ["🌙","☀️"][dn+1]
+         return ["🌙","🔅"][dn+1]
       }
    }
 
@@ -659,7 +675,7 @@ class Weather {
          Case 0x201:   ; user left-clicked tray icon
             ; Send "#{Tab}"
          Case 0x202:   ; user left-clicked tray icon
-            if (this.IsWindowVisible(this.Gui.hWnd))
+            If (GetKeyState("Ctrl", "P"))
                this.Gui.hide()
             else
                this.Gui.show()
@@ -671,7 +687,19 @@ class Weather {
    }
    Static IsWindowVisible(hwndTry) => DllCall("User32.dll\IsWindowVisible", "Ptr", hwndTry)
    Static PruneMemory() => DllCall("psapi\EmptyWorkingSet", "ptr", -1)
-
+   Static IsTopVisible(hwnd) {
+      cloaked := Buffer(4)
+      cur := hwnd
+      while (cur := DllCall("GetWindow", "Ptr", cur, "UInt", 3, "Ptr")) {
+         if !DllCall("IsWindowVisible", "Ptr", cur) || DllCall("IsIconic", "Ptr", cur)
+            continue
+         DllCall("dwmapi\DwmGetWindowAttribute", "Ptr", cur, "UInt", 14, "Ptr", cloaked, "UInt", 4)
+         if NumGet(cloaked, 0, "UInt")
+            continue
+         return false
+      }
+      return true
+   }
    /**
     * Return an object with the lat/long of some place
     * @param place Name of location
