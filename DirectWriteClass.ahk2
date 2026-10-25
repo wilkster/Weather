@@ -5,7 +5,45 @@
 #DllLoad "ole32.dll"
 #DllLoad "d2d1.dll"
 #DllLoad "dwrite.dll"
-
+struct D2D1_COLOR_F {
+   r: Float32
+   g: Float32
+   b: Float32
+   a: Float32
+}
+struct D2D1_RECT_F {
+   left  : Float32
+   top   : Float32
+   right : Float32
+   bottom: Float32
+}
+struct D2D1_SIZE_U {
+   width : UInt32
+   height: UInt32
+}
+struct D2D1_PIXEL_FORMAT {
+   format   : UInt32
+   alphaMode: UInt32
+}
+struct D2D1_RENDER_TARGET_PROPERTIES {
+   renderType : UInt32
+   pixelFormat: D2D1_PIXEL_FORMAT
+   dpiX       : Float32
+   dpiY       : Float32
+   usage      : UInt32
+   minLevel   : UInt32
+}
+struct D2D1_HWND_RENDER_TARGET_PROPERTIES {
+   hwnd          : IntPtr
+   pixelSize     : D2D1_SIZE_U
+   presentOptions: UInt32
+}
+struct D2DT_RECT {
+   left  : Int32
+   top   : Int32
+   right : Int32
+   bottom: Int32
+}
 /**
  * Renders color text (emoji included) into a Text control using Direct2D / DirectWrite.
  * Create instances with Gui.AddD2DText, which stores the instance on the control (ctrl.D2D),
@@ -252,9 +290,9 @@ class D2DText {
    /** Resizes the render target to the control's current client size and repaints. Called by Move; call it yourself if you resize the control another way. */
    Resize() {
       this._ClientSize(&w, &h)
-      sz := Buffer(8)
-      NumPut("UInt", w, "UInt", h, sz)
-      ComCall(58, this._rt, "Ptr", sz)                           ; ID2D1HwndRenderTarget::Resize
+      sz := D2D1_SIZE_U()
+      sz.width := w, sz.height := h
+      ComCall(58, this._rt, D2D1_SIZE_U, sz)                           ; ID2D1HwndRenderTarget::Resize
       this.Refresh()
    }
 
@@ -277,12 +315,19 @@ class D2DText {
       ComCall(47, rt, "Ptr", D2DText._Color(this._bg), "Int")    ; Clear (void)
 
       p := this._pad
-      rc := Buffer(16)
-      NumPut("Float", p, "Float", p, "Float", w * this.sf - p, "Float", h * this.sf - p, rc)
-
+      rc := D2D1_RECT_F()
+      rc.left := p, rc.top := p
+      rc.right := w * this.sf - p, rc.bottom := h * this.sf - p
       ; 4 = D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT
-      ComCall(27, rt, "Str", this._text, "UInt", StrLen(this._text)
-         , "Ptr", this._fmt, "Ptr", rc, "Ptr", this._brush, "Int", 4, "Int", 0, "Int")   ; DrawText (void)
+      ComCall(27, rt
+         , "Str", this._text
+         , "UInt", StrLen(this._text)
+         , "Ptr", this._fmt
+         , "Ptr", rc
+         , "Ptr", this._brush
+         , "Int", 4
+         , "Int", 0
+         , "Int")   ; DrawText (void)
 
       ; "Int" return type so D2DERR_RECREATE_TARGET is returned instead of thrown
       hr := ComCall(49, rt, "Ptr", 0, "Ptr", 0, "Int")           ; EndDraw
@@ -302,11 +347,13 @@ class D2DText {
       this._ClientSize(&w, &h)
       this._dpi := DllCall("GetDpiForWindow", "Ptr", this._ctrl.Hwnd, "UInt")
 
-      rtp := Buffer(28, 0)
-      NumPut("Float", this._dpi, "Float", this._dpi, rtp, 12)
+      rtp := D2D1_RENDER_TARGET_PROPERTIES()
+      rtp.dpiX := rtp.dpiY := this._dpi
 
-      hp := Buffer(A_PtrSize = 8 ? 24 : 16, 0)
-      NumPut("Ptr", this._ctrl.Hwnd, "UInt", w, "UInt", h, "UInt", 0, hp)
+      hp := D2D1_HWND_RENDER_TARGET_PROPERTIES()
+      hp.hwnd := this._ctrl.Hwnd
+      hp.pixelSize.width := w
+      hp.pixelSize.height := h
 
       rt := 0
       ComCall(14, D2DText._d2d, "Ptr", rtp, "Ptr", hp, "Ptr*", &rt)       ; CreateHwndRenderTarget
@@ -324,9 +371,16 @@ class D2DText {
     */
    _CreateFormat() {
       fmt := 0
-      ComCall(15, D2DText._dw, "WStr", this._font, "Ptr", 0
-         , "Int", this._weight, "Int", 0, "Int", 5, "Float", this._size * 96 / 72
-         , "WStr", "en-us", "Ptr*", &fmt)                        ; CreateTextFormat
+      ComCall(15, D2DText._dw
+         , "WStr", this._font
+         , "Ptr", 0
+         , "Int", this._weight
+         , "Int", 0
+         , "Int", 5
+         , "Float", this._size * 96 / 72
+         , "WStr", "en-us"
+         , "Ptr*", &fmt
+      )                        ; CreateTextFormat
       this._fmt := fmt
       ComCall(3, fmt, "Int", this._align)                        ; SetTextAlignment
       ComCall(5, fmt, "Int", this._wrap ? 0 : 1)                 ; SetWordWrapping
@@ -366,10 +420,12 @@ class D2DText {
     * @returns {Buffer} 16-byte D2D1_COLOR_F structure.
     */
    static _Color(rgb, a := 1.0) {
-      c := Buffer(16)
       rgb := D2DText._ToRGB(rgb)
-      NumPut("Float", (rgb >> 16 & 0xFF) / 255, "Float", (rgb >> 8 & 0xFF) / 255
-         , "Float", (rgb & 0xFF) / 255, "Float", a, c)
+      c := D2D1_COLOR_F()
+      c.r := (rgb >> 16 & 0xFF) / 255
+      c.g := (rgb >> 8 & 0xFF) / 255
+      c.b := (rgb & 0xFF) / 255
+      c.a := a
       return c
    }
 
@@ -443,10 +499,8 @@ class D2DText {
     * @param {VarRef} h Receives the height in pixels.
     */
    _ClientSize(&w, &h) {
-      rc := Buffer(16, 0)
-      DllCall("GetClientRect", "Ptr", this._ctrl.Hwnd, "Ptr", rc)
-      w := NumGet(rc, 8, "Int")
-      h := NumGet(rc, 12, "Int")
+      DllCall("GetClientRect", "Ptr", this._ctrl.Hwnd, D2DT_RECT, rc:= D2DT_RECT())
+      w := rc.right, h := rc.bottom
    }
 
    /**
