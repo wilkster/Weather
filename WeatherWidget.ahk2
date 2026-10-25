@@ -196,12 +196,12 @@ class Weather {
          this.Ctl.srss   := this.Gui.AddD2DText(dw " y+8", ,                        "Segoe UI", 12, "f3f4cd")   ; Direct Write for emojis
          this.Ctl.srss.SetAlign("Center")
          this.Gui.SetFont("S11", "Consolas") ; Impacts spacing, leave a little extra due to emoji heights
-         this.Ctl.hourly := this.Gui.AddD2DText(dw " y+8 r" this.maxRows + 1,,      "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
-         this.Ctl.daily  := this.Gui.AddD2DText(dw " y+8 r" this.forecastDays + 1,, "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
+         this.Ctl.hourly := this.Gui.AddD2DText(dw " y+12 r" this.maxRows + 1,,      "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
+         this.Ctl.daily  := this.Gui.AddD2DText(dw " y+12 r" this.forecastDays + 1,, "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
       } Else {
          this.Ctl.srss    := this.AddTextCtl(dw " y+8 Center", ,                "S12 cf3f4cd",      "Segoe UI")
-         this.Ctl.hourly  := this.AddTextCtl(dw " y+8 r" this.maxRows+1 " y+8",,"s10 cBAC2DE",      "Consolas")  ; subtext1
-         this.Ctl.daily   := this.AddTextCtl(dw " y+8 r" this.forecastDays+1,,  "s10 cCDD6F4",      "Consolas")  ; text
+         this.Ctl.hourly  := this.AddTextCtl(dw " y+12 r" this.maxRows+1 " y+8",,"s10 cBAC2DE",      "Consolas")  ; subtext1
+         this.Ctl.daily   := this.AddTextCtl(dw " y+12 r" this.forecastDays+1,,  "s10 cCDD6F4",      "Consolas")  ; text
       }
       this.Ctl.updated := this.AddTextCtl(dw,,                                 "s8  c7F849C",      "Segoe UI")  ; overlay1
       this.Ctl.Icon    := g.AddPicture("H96 W96 X160 Y0")
