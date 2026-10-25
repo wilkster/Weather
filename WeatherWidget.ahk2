@@ -25,6 +25,7 @@ class Weather {
    static CC            := "us"
    static Name          := "Los Angeles, CA"
    static Interval      := 30 * 60 * 1000   ; ms
+   /** @type {Gui} */
    static Gui           := ""
    static Ctl           := {}
    static Menu          := ""
@@ -174,7 +175,7 @@ class Weather {
       ; Build the GUI, should be DPI aware, composting helps with flicker
       if (this.gui)
          this.gui.Destroy()
-
+      /** @type {Gui} */
       g := this.Gui := Gui("-Caption +ToolWindow +Border +DPIScale +E0x02000000")
       g.BackColor := "1E1E2E"
       g.MarginX := 10, g.MarginY := 8
@@ -195,12 +196,12 @@ class Weather {
          this.Ctl.srss   := this.Gui.AddD2DText(dw " y+8", ,                        "Segoe UI", 12, "f3f4cd")   ; Direct Write for emojis
          this.Ctl.srss.SetAlign("Center")
          this.Gui.SetFont("S11", "Consolas") ; Impacts spacing, leave a little extra due to emoji heights
-         this.Ctl.daily  := this.Gui.AddD2DText(dw " y+8 r" this.forecastDays + 1,, "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
          this.Ctl.hourly := this.Gui.AddD2DText(dw " y+8 r" this.maxRows + 1,,      "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
+         this.Ctl.daily  := this.Gui.AddD2DText(dw " y+8 r" this.forecastDays + 1,, "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
       } Else {
          this.Ctl.srss    := this.AddTextCtl(dw " y+8 Center", ,                "S12 cf3f4cd",      "Segoe UI")
-         this.Ctl.daily   := this.AddTextCtl(dw " y+8 r" this.forecastDays+1,,  "s10 cCDD6F4",      "Consolas")  ; text
          this.Ctl.hourly  := this.AddTextCtl(dw " y+8 r" this.maxRows+1 " y+8",,"s10 cBAC2DE",      "Consolas")  ; subtext1
+         this.Ctl.daily   := this.AddTextCtl(dw " y+8 r" this.forecastDays+1,,  "s10 cCDD6F4",      "Consolas")  ; text
       }
       this.Ctl.updated := this.AddTextCtl(dw,,                                 "s8  c7F849C",      "Segoe UI")  ; overlay1
       this.Ctl.Icon    := g.AddPicture("H96 W96 X160 Y0")
@@ -241,15 +242,25 @@ class Weather {
    Static ApplyRowCounts() {
       c := this.Ctl
       gap := 8 * A_ScreenDPI / 96          ; matches your y+8, or measure it once in Init
-      c.daily.GetPos(, &dY)
-      dH := this.rowH1 * (this.forecastDays + 1)
+      c.hourly.GetPos(, &hY)
       hH := this.rowH2 * (this.maxRows + 1)
-      hY := dY + dH + gap
-      c.daily.Move(, , , dH)
-      c.hourly.Move(, hY, , hH)
-      c.updated.Move(, hY + hH + gap)
+      dH := this.rowH1 * (this.forecastDays + 1)
+      dY := hY + hH + gap
+      c.hourly.Move(, , , hH)
+      c.daily.Move(, dY, , dH)
+      c.updated.Move(, dY + dH + gap)
       this.Gui.Show("NoActivate AutoSize")
       this.RefreshData()
+   }
+   /**
+    * Return the approzimate moon phase unicode symbol
+    * @returns Unicode character for moon phase 
+    */
+   Static MoonPhase() {
+      p := 29.530588853                                  ; synodic month, days
+      age := Mod(DateDiff(A_NowUTC, "20000106181400", "S") / 86400, p)   ; days since the 2000-01-06 new moon
+      idx := Mod(Floor(age / p * 8 + 0.5), 8)            ; 0 = new, 4 = full
+      Return Chr(0x1F311 + idx)                          ; 🌑🌒🌓🌔🌕🌖🌗🌘
    }
    /**
     * Read the locations in the order they are in the ini file
@@ -546,7 +557,7 @@ class Weather {
       this.Ctl.temp.Text := tf "°"
       sr := "☀↑  " StrLower(FormatTime(RegExReplace(this.List(day, "sunrise")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
       ss := "🌙↓  " StrLower(FormatTime(RegExReplace(this.List(day, "sunset")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
-      this.Ctl.srss.Text := sr "           " ss
+      this.Ctl.srss.Text := sr . "     " ss . "      " this.MoonPhase()
       this.Ctl.cond.Text := this.Codes.Get(code, "Code " code) ; . sr " " ss
       this.Ctl.detail.Text := (tf < 40 ? "❄ " : tf > 90 ? "🌡️ " : "") . "Feels " Round(this.Value(cur, "apparent_temperature")) "°"
          . "   Hum " Round(this.Value(cur, "relative_humidity_2m")) "%"
@@ -614,7 +625,8 @@ class Weather {
             this.Ctl.hourly.SetColors(, (isDay ? "1E1E2E" : "11111B"))
             this.Ctl.daily.SetColors(, (isDay ? "1E1E2E" : "11111B"))
             this.Ctl.srss.SetColors(, (isDay ? "1E1E2E" : "11111B"))
-            ;this.Ctl.daily.Draw()
+            this.Ctl.hourly.Refresh()
+            this.Ctl.daily.Refresh()
          }
          If (FileExist(Icon)) {
             If (Icon != this.ActiveIcon) {
