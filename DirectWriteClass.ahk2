@@ -292,7 +292,7 @@ class D2DText {
       this._ClientSize(&w, &h)
       sz := D2D1_SIZE_U()
       sz.width := w, sz.height := h
-      ComCall(58, this._rt, D2D1_SIZE_U, sz)                           ; ID2D1HwndRenderTarget::Resize
+      ComCall(58, this._rt, "ptr", sz)                           ; ID2D1HwndRenderTarget::Resize
       this.Refresh()
    }
 
