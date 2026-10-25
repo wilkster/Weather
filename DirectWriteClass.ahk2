@@ -144,7 +144,7 @@ class D2DText {
          else
             fg := D2DText._SysColor(8)                           ; COLOR_WINDOWTEXT
       }
-
+      ; This calls the new method here
       inst := D2DText(ctrl, text, font, size, fg, bg, weight, pad)
       ctrl.D2D := inst           ; keeps the instance alive as long as the control exists
       return inst
@@ -458,6 +458,7 @@ class D2DText {
       Return
    }
 }
+;@reference DirectWriteClass.d.ahk
 Gui.Prototype.DefineProp("AddD2DText", {Call: (g, args*) => D2DText.Create(g, args*)})
 
 /*
