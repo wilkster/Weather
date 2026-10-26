@@ -892,25 +892,71 @@ class LocationManager {
    static LB := ""
    static Edit := ""
 
+ static InitW := 430
+   static InitH := 340
+   static Margin := 10
+   static Gap := 5
+
    static Show() {
       if this.Gui {
          this.Gui.Show()
          return
       }
       this.Load()
-      g := this.Gui := Gui(, "Manage Weather Locations")
+      g := this.Gui := Gui("+Resize", "Manage Weather Locations")
       g.SetFont("s10")
-      this.LB := g.AddListBox("xm w310 r15")
-      g.AddButton("x+5 w90", "Move &Up 🡅").OnEvent("Click", this.Move.Bind(this, -1))
-      g.AddButton("xp wp", "Move &Down 🡇").OnEvent("Click", this.Move.Bind(this, 1))
-      g.AddButton("xp wp", "&Remove ✂").OnEvent("Click", this.Remove.Bind(this))
-      this.Edit := g.AddEdit("xm w225")
-      g.AddButton("x+5 yp-3 w85 Default", "🡄 &Add").OnEvent("Click", this.Add.Bind(this))
-      g.AddButton("x+5 wp", "&Close").OnEvent("Click", this.Close.Bind(this))
+      this.LB        := g.AddListBox("r15")
+      this.BtnUp     := g.AddButton("w90 left", "🡅 Move &Up")
+      this.BtnDown   := g.AddButton("w90 left", "🡇 Move &Down")
+      this.BtnRemove := g.AddButton("w90 left", "✂ &Remove")
+      this.Edit      := g.AddEdit()
+      this.BtnAdd    := g.AddButton("w85 Default", "🡄 &Add")
+      this.BtnClose  := g.AddButton("w85", "&Close")
+
+      this.BtnUp.OnEvent("Click", this.Move.Bind(this, -1))
+      this.BtnDown.OnEvent("Click", this.Move.Bind(this, 1))
+      this.BtnRemove.OnEvent("Click", this.Remove.Bind(this))
+      this.BtnAdd.OnEvent("Click", this.Add.Bind(this))
+      this.BtnClose.OnEvent("Click", this.Close.Bind(this))
+
       g.OnEvent("Close", this.Close.Bind(this))
       g.OnEvent("Escape", this.Close.Bind(this))
-      this.Refresh()
-      g.Show()
+      g.OnEvent("Size", this.Size.Bind(this))
+
+      this.PlaceControls(this.InitW, this.InitH)
+      this.RefreshListBox()
+      g.Opt("+MinSize" this.InitW "x" this.InitH)
+      g.Show("w" this.InitW " h" this.InitH)
+   }
+
+   static PlaceControls(w, h) {
+      m := this.Margin, gap := this.Gap
+      this.BtnUp.GetPos(, , &bw, &bh)         ; right column button size
+      this.BtnAdd.GetPos(, , &bw2)            ; bottom row button width
+      this.Edit.GetPos(, , , &eh)
+
+      rightX := w - m - bw                    ; right button column
+      rowY   := h - m - bh                      ; bottom row
+      closeX := w - m - bw2
+      addX   := closeX - gap - bw2
+
+      this.LB.Move(m, m, rightX - gap - m, rowY - gap - m)
+      this.BtnUp.Move(rightX, m)
+      this.BtnDown.Move(rightX, m + (bh + gap))
+      this.BtnRemove.Move(rightX, m + (bh + gap) * 2)
+      this.Edit.Move(m, rowY + (bh - eh) // 2, addX - gap - m)
+      this.BtnAdd.Move(addX, rowY)
+      this.BtnClose.Move(closeX, rowY)
+   }
+
+   static Size(gui, minMax, w, h) {
+      if minMax != -1                         ; skip minimize
+         this.PlaceControls(w, h)
+   }
+
+   static Close(*) {
+      this.Gui.Destroy()
+      this.Gui := ""
    }
 
    static ReadText(&enc) {
@@ -969,7 +1015,7 @@ class LocationManager {
       f.Close()
    }
 
-   static Refresh(sel := 0) {
+   static RefreshListBox(sel := 0) {
       this.LB.Delete()
       if this.Items.Length
          this.LB.Add(this.Items)
@@ -996,7 +1042,7 @@ class LocationManager {
          ; this.CC := obj.CC
          this.Items.Push(text) ; obj.name
          this.Save()
-         this.Refresh(this.Items.Length)
+         this.RefreshListBox(this.Items.Length)
          this.Edit.Value := ""
          this.Edit.Focus()
       } Else {
@@ -1010,7 +1056,7 @@ class LocationManager {
          return
       this.Items.RemoveAt(i)
       this.Save()
-      this.Refresh(Min(i, this.Items.Length))
+      this.RefreshListBox(Min(i, this.Items.Length))
    }
 
    static Move(dir, *) {
@@ -1022,13 +1068,9 @@ class LocationManager {
       this.Items[i] := this.Items[j]
       this.Items[j] := tmp
       this.Save()
-      this.Refresh(j)
+      this.RefreshListBox(j)
    }
 
-   static Close(*) {
-      this.Gui.Destroy()
-      this.Gui := ""
-   }
 }
 
 
