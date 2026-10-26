@@ -16,18 +16,6 @@ TODO
 - Hourly air quality data? Wider GUI
 - https://github.com/Makin-Things/weather-icons (SVG, some are animated)
 */
-#HotIf WinActive("ahk_class AutohotkeyGUI")
-^1::{
-   ; No Flicker
-   D2DText.RefreshAll(Weather.Gui) 
-}
-^2::{
-   ; Causes full GUI refresh triggers _OnPaint, without RDW_ERASE no flicker
-   ;  RDW_INVALIDATE|RDW_ERASE|RDW_FRAME|RDW_ALLCHILDREN|RDW_UPDATENOW
-   ; DllCall("RedrawWindow", "Ptr", Weather.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0001|0x0080|0x0100)
-   Weather.RefresMe()
-}
-#Hotif
 
 class Weather {
    static Lat           := 34.0447
