@@ -33,6 +33,7 @@ class Weather {
    Static forecastDays  := 2
    Static hourIncrement := 3
    Static maxRows       := 8
+   Static mks           := 0
   /*
       WMO Weather Codes Reference
       Code	      Description
@@ -161,6 +162,7 @@ class Weather {
          }
          this.Interval      := Integer(IniRead(this.iniFile, A_ComputerName, "Refresh Minutes", 30))
          this.OnTop         := Integer(IniRead(this.iniFile, A_ComputerName, "OnTop", this.OnTop))
+         this.MKS           := Integer(IniRead(this.iniFile, A_ComputerName, "MKS", this.MKS))
          this.forecastDays  := Integer(IniRead(this.iniFile, A_ComputerName, "Forecast Days", this.forecastDays))
          this.hourIncrement := Integer(IniRead(this.iniFile, A_ComputerName, "Hours Increment", this.hourIncrement))
          this.maxRows       := Integer(IniRead(this.iniFile, A_ComputerName, "Max Rows", this.maxRows))
@@ -195,9 +197,9 @@ class Weather {
       If (this.useD2D) {
          this.Ctl.srss   := this.Gui.AddD2DText(dw " y+8", ,                        "Segoe UI", 12, "f3f4cd")   ; Direct Write for emojis
          this.Ctl.srss.SetAlign("Center")
-         this.Gui.SetFont("S11", "Consolas") ; Impacts spacing, leave a little extra due to emoji heights
+         this.Gui.SetFont("S12", "Consolas") ; Impacts spacing, leave a little extra due to emoji heights. I could force spacing but would be too crowded
          this.Ctl.hourly := this.Gui.AddD2DText(dw " y+12 r" this.maxRows + 1,,      "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
-         this.Ctl.daily  := this.Gui.AddD2DText(dw " y+12 r" this.forecastDays + 1,, "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
+         this.Ctl.daily  := this.Gui.AddD2DText(dw " y+10 r" this.forecastDays + 1,, "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
       } Else {
          this.Ctl.srss    := this.AddTextCtl(dw " y+8 Center", ,                "S12 cf3f4cd",      "Segoe UI")
          this.Ctl.hourly  := this.AddTextCtl(dw " y+12 r" this.maxRows+1 " y+8",,"s10 cBAC2DE",      "Consolas")  ; subtext1
@@ -328,14 +330,26 @@ class Weather {
       this.Menu.Add("Edit Settings File", (*) => Run(this.iniFile))  ; Creates a new menu item.
       this.Menu.Add()
       mn := "Always On Top"
-      this.Menu.Add(mn, Toggle)  ; Creates a new menu item.
+      this.Menu.Add(mn, ToggleOnTop)  ; Creates a new menu item.
       If (this.OnTop)
          this.Menu.Check(mn)
+      mn := "Metric Units"
+
+      this.Menu.Add(mn, ToggleMKS)  ; Creates a new menu item.
+      if (this.mks)
+         this.Menu.Check(mn)
+
+
       this.Menu.Add("Exit", (*) => ExitApp())
-      Toggle(*) {
+      ToggleOnTop(*) {
          this.OnTop := !this.OnTop
          IniWrite(this.OnTop, this.iniFile, A_ComputerName, "OnTop")
          this.gui.opt(this.OnTop ? "+AlwaysOnTop" : "-AlwaysOnTop")
+      }
+      ToggleMKS(*) {
+         this.mks := !this.mks
+         IniWrite(this.OnTop, this.iniFile, A_ComputerName, "MKS")
+         this.RefreshData()
       }
    }
 
@@ -507,11 +521,18 @@ class Weather {
    Static UpdateWeather(*) {
       If (!this.EnsureGeo())
          Return false
+      If (this.mks) {
+         ws := "kmh"
+         tu := "celsius"
+      } Else {
+         ws := "mph"
+         tu := "fahrenheit"
+      }
       url := "https://api.open-meteo.com/v1/forecast?latitude=" this.Lat "&longitude=" this.Lon
          . "&current=weather_code,temperature_2m,wind_speed_10m,wind_direction_10m,apparent_temperature,relative_humidity_2m,is_day"
          . "&hourly=weather_code,temperature_2m,precipitation_probability,wind_speed_10m,wind_direction_10m,is_day"
          . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset"
-         . "&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=" this.forecastDays 
+         . "&temperature_unit=" tu "&wind_speed_unit=" ws "&forecast_days=" this.forecastDays 
          . "&forecast_hours=" this.maxRows * this.hourIncrement + 2 "&timezone=auto"
       Return this.Query(url, this.RenderWeather.Bind(this))
    }
@@ -555,13 +576,14 @@ class Weather {
       tf    := Round(this.Value(cur, "temperature_2m"))
       d     := Compass(this.Value(cur, "wind_direction_10m"))
       this.Ctl.temp.Text := tf "°"
+      wsu := this.mks ? " kmh " : " mph "
       sr := "☀↑  " StrLower(FormatTime(RegExReplace(this.List(day, "sunrise")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
       ss := "🌙↓  " StrLower(FormatTime(RegExReplace(this.List(day, "sunset")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
-      this.Ctl.srss.Text := sr . "     " ss . "      " this.MoonPhase()
+      this.Ctl.srss.Text := sr . "  " ss . "       " this.MoonPhase()
       this.Ctl.cond.Text := this.Codes.Get(code, "Code " code) ; . sr " " ss
       this.Ctl.detail.Text := (tf < 40 ? "❄ " : tf > 90 ? "🌡️ " : "") . "Feels " Round(this.Value(cur, "apparent_temperature")) "°"
          . "   Hum " Round(this.Value(cur, "relative_humidity_2m")) "%"
-         . "   Wind " Round(this.Value(cur, "wind_speed_10m")) " mph " d
+         . "   Wind " Round(this.Value(cur, "wind_speed_10m")) . wsu . d
       ; Today
       ;-----------------------------------------------------------------------
       ; Daily Forecast
@@ -576,7 +598,7 @@ class Weather {
          fDate     := Trim(StrReplace(this.List(day, "time")[i],'-'),'"')
          dayOfWeek := this.rpad(FormatTime(fDate, "ddd"),3)
          wc        := this.emoji.get(Integer(this.List(day, "weather_code")[i]), "🌈")
-         out       .= dayOfWeek " " lo "° to " hi "° " wc (IsNumber(pop) ? this.lpad(pop,4) : "--") "%" this.lpad(ws,4) " mph`n"
+         out       .= dayOfWeek " " lo "° to " hi "° " wc (IsNumber(pop) ? this.lpad(pop,4) : "--") "%" this.lpad(ws,4) wsu "`n"
       }
       this.Ctl.daily.Text := RTrim(out)
       ;-----------------------------------------------------------------------
@@ -601,10 +623,14 @@ class Weather {
          w  := winds[i]
          d  := Compass(dirs[i])
          wc := this.emoji.get(Integer(codes[i]), "🌈")
-         out .= daynight(dn) . this.lpad(this.Hour12(hr), 6)
+         ; out .= daynight(dn) . this.lpad(this.Hour12(hr), 6)
+         ;    . this.lpad(IsNumber(t) ? (Round(t) "°") : "--", 5) . " " . wc
+         ;    . this.lpad(IsNumber(p) ? (p "%") : "--", 5)
+         ;    . "  " . this.lpad(IsNumber(w) ? (Round(w) " mph ") : ("--"), 8) d "`n"
+         out .=  this.lpad(this.Hour12(hr), 5) . " " . daynight(dn)
             . this.lpad(IsNumber(t) ? (Round(t) "°") : "--", 5) . " " . wc
             . this.lpad(IsNumber(p) ? (p "%") : "--", 5)
-            . "  " . this.lpad(IsNumber(w) ? (Round(w) " mph ") : ("--"), 8) d "`n"
+            . "  " . this.lpad(IsNumber(w) ? (Round(w) . wsu) : ("--"), 8) d "`n"
          i += this.hourIncrement
       }
       this.Ctl.hourly.Text := RTrim(out, "`n")
@@ -619,15 +645,6 @@ class Weather {
             if (FileExist(AltIcon))
                Icon := AltIcon
          }
-         this.Gui.BackColor := isDay ? "1E1E2E" : "11111B"
-         ; Have set these specifically, and in hex
-         If (this.useD2D) {
-            this.Ctl.hourly.SetColors(, (isDay ? "1E1E2E" : "11111B"))
-            this.Ctl.daily.SetColors(, (isDay ? "1E1E2E" : "11111B"))
-            this.Ctl.srss.SetColors(, (isDay ? "1E1E2E" : "11111B"))
-            this.Ctl.hourly.Refresh()
-            this.Ctl.daily.Refresh()
-         }
          If (FileExist(Icon)) {
             If (Icon != this.ActiveIcon) {
                TraySetIcon(Icon)
@@ -638,6 +655,16 @@ class Weather {
             OutputDebug("Missing expected Icon File:" Icon)
          }
          A_IconTip := this.Name "`n" (Round(this.Value(cur, "temperature_2m")) . "° - " . this.Codes[code])
+         ; Set the backcolor
+         this.Gui.BackColor := isDay ? "1E1E2E" : "11111B"
+         If (this.useD2D) {
+            this.Ctl.hourly.SetColors(, (isDay ? "1E1E2E" : "11111B"))
+            this.Ctl.daily.SetColors(, (isDay ? "1E1E2E" : "11111B"))
+            this.Ctl.srss.SetColors(, (isDay ? "1E1E2E" : "11111B"))
+            ; DllCall("RedrawWindow", "Ptr", this.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x181)
+            ; May be needed if screen wss blank
+            D2DText.RefreshAll(this.Gui)
+         }
       }
       static Compass(deg) {
          if (!IsNumber(deg))
