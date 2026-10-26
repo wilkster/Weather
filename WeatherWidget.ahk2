@@ -11,14 +11,24 @@
 /*
 TODO
 - seems to stay on all desktops, this is desired
-- Don't write any settings that aren't changed in the app unless they don't already exist
-- Add F or C option in settings, also windspeed, temperature_unit=fahrenheit, wind_speed_unit=mph
-  current_units "wind_speed_10m": "mp/h" has it embedded, "temperature_2m": "°F"
-- Moon phases for night, https://www.amp-what.com/unicode/search/moon
+- Don;t make static so would could have multiple instances at once for different locations
+  Pass in location name into __Init
 - Hourly air quality data? Wider GUI
-- If changing days/interval, need to restart due to size changes, auto handle this? Better calculation of rows.
 - https://github.com/Makin-Things/weather-icons (SVG, some are animated)
 */
+#HotIf WinActive("ahk_class AutohotkeyGUI")
+^1::{
+   ; No Flicker
+   D2DText.RefreshAll(Weather.Gui) 
+}
+^2::{
+   ; Causes full GUI refresh triggers _OnPaint, without RDW_ERASE no flicker
+   ;  RDW_INVALIDATE|RDW_ERASE|RDW_FRAME|RDW_ALLCHILDREN|RDW_UPDATENOW
+   ; DllCall("RedrawWindow", "Ptr", Weather.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0001|0x0080|0x0100)
+   Weather.RefresMe()
+}
+#Hotif
+
 class Weather {
    static Lat           := 34.0447
    static Lon           := -118.2493
@@ -178,7 +188,7 @@ class Weather {
       if (this.gui)
          this.gui.Destroy()
       /** @type {Gui} */
-      g := this.Gui := Gui("-Caption +ToolWindow +Border +DPIScale")
+      g := this.Gui := Gui("-Caption +ToolWindow +Border +DPIScale +E0x02000000")
       g.BackColor := "1E1E2E"
       g.MarginX := 10, g.MarginY := 8
       /*
@@ -792,7 +802,9 @@ class Weather {
          return out
       }   
    }
-
+   ; Trigger a paint for the D2D elements, shouldn't flash
+   ; RDW_INVALIDATE|RDW_ALLCHILDREN|RDW_UPDATENOW
+   Static RefresMe() => DllCall("RedrawWindow", "Ptr", Weather.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0001|0x0080|0x0100)
 }
 
 /**
@@ -826,7 +838,8 @@ SetupEventMonitoring() {
       If (wParam = WTS_SESSION_LOCK) {
          SetTimer(Weather.cbUpdateData, 0)
       } Else If (wParam = WTS_SESSION_UNLOCK) {
-         D2DText.RefreshAll(Weather.Gui)
+         Weather.RefresMe()
+         ; D2DText.RefreshAll(Weather.Gui)
          OutputDebug("WeatherWidget: Session Change")
          SetTimer(Weather.cbUpdateData, -5000)
       }
@@ -836,7 +849,8 @@ SetupEventMonitoring() {
       Static PBT_APMRESUMESUSPEND := 0x7, PBT_APMRESUMEAUTOMATIC := 0x12
       Switch wParam {
          Case PBT_APMRESUMESUSPEND, PBT_APMRESUMEAUTOMATIC :
-            D2DText.RefreshAll(Weather.Gui)
+            Weather.RefresMe()
+            ; D2DText.RefreshAll(Weather.Gui)
             SetTimer(Weather.cbUpdateData, -10000)
             OutputDebug("WeatherWidget: Resume from Suspension")
          Default :
@@ -853,9 +867,8 @@ SetupEventMonitoring() {
       SetTimer(RefreshGui, -4000)   ; let the display stack settle first
       Return
       Static RefreshGui() {
-         ; RDW_INVALIDATE|RDW_ERASE|RDW_FRAME|RDW_ALLCHILDREN|RDW_UPDATENOW
-         D2DText.RefreshAll(Weather.Gui)
-         ; DllCall("RedrawWindow", "Ptr", Weather.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x585)
+         Weather.RefresMe()
+         ; D2DText.RefreshAll(Weather.Gui)
       }
    }
    ;----------------------------------------------------------------------

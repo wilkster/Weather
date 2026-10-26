@@ -300,6 +300,7 @@ class D2DText {
    Refresh() {
       DllCall("InvalidateRect", "Ptr", this._ctrl.Hwnd, "Ptr", 0, "Int", 0)
       DllCall("UpdateWindow", "Ptr", this._ctrl.Hwnd)
+      ; OutputDebug("Refreshing " this._ctrl.Hwnd)
    }
    /**
     * Repaints every D2DText control in a GUI.
@@ -489,6 +490,7 @@ class D2DText {
       DllCall("BeginPaint", "Ptr", this._ctrl.Hwnd, "Ptr", ps, "Ptr")
       this.Draw()
       DllCall("EndPaint", "Ptr", this._ctrl.Hwnd, "Ptr", ps)
+      ; OutputDebug("WeatherWidget OnPaint Received: " this._ctrl.Hwnd)
       return 0
    }
 
