@@ -6,7 +6,7 @@
 ;@Ahk2Exe-SetOrigFilename Weather.exe
 ;@Ahk2Exe-SetMainIcon Partly Cloudy.ico
 #SingleInstance Off
-#Requires AutoHotkey v2.0
+#Requires AutoHotkey v2.1-
 #include DirectWriteClass.ahk2
 /*
 TODO
@@ -24,7 +24,7 @@ class Weather {
    static Lon           := -118.2493
    static CC            := "us"
    static Name          := "Los Angeles, CA"
-   static Interval      := 30 * 60 * 1000   ; ms
+   static Interval      := 30 ; minutes
    /** @type {Gui} */
    static Gui           := ""
    static Ctl           := {}
@@ -178,7 +178,7 @@ class Weather {
       if (this.gui)
          this.gui.Destroy()
       /** @type {Gui} */
-      g := this.Gui := Gui("-Caption +ToolWindow +Border +DPIScale +E0x02000000")
+      g := this.Gui := Gui("-Caption +ToolWindow +Border +DPIScale")
       g.BackColor := "1E1E2E"
       g.MarginX := 10, g.MarginY := 8
       /*
@@ -348,7 +348,7 @@ class Weather {
       }
       ToggleMKS(*) {
          this.mks := !this.mks
-         IniWrite(this.OnTop, this.iniFile, A_ComputerName, "MKS")
+         IniWrite(this.mks, this.iniFile, A_ComputerName, "MKS")
          this.RefreshData()
       }
    }
@@ -575,13 +575,24 @@ class Weather {
       isDay := Integer(this.Value(cur, "is_day"))
       tf    := Round(this.Value(cur, "temperature_2m"))
       d     := Compass(this.Value(cur, "wind_direction_10m"))
+
+      ; change background if transitioning from day ⬌ Night
+      bgc := isDay ? "1E1E2E" : "11111B"
+      If (this.Gui.BackColor != bgc) {
+         this.Gui.BackColor := bgc
+         If this.useD2D
+            For c in [this.Ctl.srss, this.Ctl.hourly, this.Ctl.daily]
+               c.SetColors(, bgc)
+      }
+
       this.Ctl.temp.Text := tf "°"
       wsu := this.mks ? " kmh " : " mph "
       sr := "☀↑  " StrLower(FormatTime(RegExReplace(this.List(day, "sunrise")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
       ss := "🌙↓  " StrLower(FormatTime(RegExReplace(this.List(day, "sunset")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
       this.Ctl.srss.Text := sr . "  " ss . "       " this.MoonPhase()
       this.Ctl.cond.Text := this.Codes.Get(code, "Code " code) ; . sr " " ss
-      this.Ctl.detail.Text := (tf < 40 ? "❄ " : tf > 90 ? "🌡️ " : "") . "Feels " Round(this.Value(cur, "apparent_temperature")) "°"
+      cold := this.mks ? 4 : 40, hot := this.mks ? 32 : 90
+      this.Ctl.detail.Text := (tf < cold ? "❄ " : tf > hot ? "🌡️ " : "") . "Feels " Round(this.Value(cur, "apparent_temperature")) "°"
          . "   Hum " Round(this.Value(cur, "relative_humidity_2m")) "%"
          . "   Wind " Round(this.Value(cur, "wind_speed_10m")) . wsu . d
       ; Today
@@ -655,16 +666,6 @@ class Weather {
             OutputDebug("Missing expected Icon File:" Icon)
          }
          A_IconTip := this.Name "`n" (Round(this.Value(cur, "temperature_2m")) . "° - " . this.Codes[code])
-         ; Set the backcolor
-         this.Gui.BackColor := isDay ? "1E1E2E" : "11111B"
-         If (this.useD2D) {
-            this.Ctl.hourly.SetColors(, (isDay ? "1E1E2E" : "11111B"))
-            this.Ctl.daily.SetColors(, (isDay ? "1E1E2E" : "11111B"))
-            this.Ctl.srss.SetColors(, (isDay ? "1E1E2E" : "11111B"))
-            ; DllCall("RedrawWindow", "Ptr", this.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x181)
-            ; May be needed if screen wss blank
-            D2DText.RefreshAll(this.Gui)
-         }
       }
       static Compass(deg) {
          if (!IsNumber(deg))
@@ -825,15 +826,17 @@ SetupEventMonitoring() {
       If (wParam = WTS_SESSION_LOCK) {
          SetTimer(Weather.cbUpdateData, 0)
       } Else If (wParam = WTS_SESSION_UNLOCK) {
+         D2DText.RefreshAll(Weather.Gui)
          OutputDebug("WeatherWidget: Session Change")
          SetTimer(Weather.cbUpdateData, -5000)
       }
    }
    ; Resume from sleep
    cbPowerChangeEvent(wParam, lParam, Msg, hWnd) {
-      Static PBT_APMRESUMESUSPEND := 0x7
+      Static PBT_APMRESUMESUSPEND := 0x7, PBT_APMRESUMEAUTOMATIC := 0x12
       Switch wParam {
-         Case PBT_APMRESUMESUSPEND :
+         Case PBT_APMRESUMESUSPEND, PBT_APMRESUMEAUTOMATIC :
+            D2DText.RefreshAll(Weather.Gui)
             SetTimer(Weather.cbUpdateData, -10000)
             OutputDebug("WeatherWidget: Resume from Suspension")
          Default :
@@ -851,9 +854,8 @@ SetupEventMonitoring() {
       Return
       Static RefreshGui() {
          ; RDW_INVALIDATE|RDW_ERASE|RDW_FRAME|RDW_ALLCHILDREN|RDW_UPDATENOW
-         Weather.Gui.Opt("-E0x02000000")
-         Weather.Gui.Opt("+E0x02000000")
-         DllCall("RedrawWindow", "Ptr", Weather.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x585)
+         D2DText.RefreshAll(Weather.Gui)
+         ; DllCall("RedrawWindow", "Ptr", Weather.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x585)
       }
    }
    ;----------------------------------------------------------------------
