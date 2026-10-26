@@ -170,7 +170,7 @@ class Weather {
          this.NeedGeo := false
          IniWrite(this.Interval, this.iniFile, A_ComputerName, "Refresh Minutes")
          IniWrite(this.Name, this.iniFile, A_ComputerName, "Loc")
-         IniWrite(this.Name, this.iniFile, "Locations", "Loc1")
+         IniWrite(this.Name, this.iniFile, "Locations")
       }
       ; Build the GUI, should be DPI aware, composting helps with flicker
       if (this.gui)
@@ -309,6 +309,8 @@ class Weather {
       ; Read the whole section to so retain order in the file vs by number
       ; This allows duplicate entries or just loc=.......
       If (FileExist(this.iniFile)) {
+         this.Menu.Add("Manage Locations", (*) => LocationManager.Show())  ; Creates a new menu item.
+         this.Menu.Add()
          maxLoc :=IniRead(this.iniFile, "Default", "Max Locations", 50)
          for idx,loc in this.ReadLocations(this.iniFile) {
             this.menu.add(loc, this.setlocation.bind(this))
@@ -326,6 +328,7 @@ class Weather {
       this.Menu.Add("Refresh Minute Interval", this.BuildNumMenu("Interval", "Refresh Minutes", 12, 5))
       ; TODO add one for refresh interval, but need to deal with the math, maybe split 
       this.Menu.Add("Edit Settings File", (*) => Run(this.iniFile))  ; Creates a new menu item.
+
       this.Menu.Add()
       mn := "Always On Top"
       this.Menu.Add(mn, ToggleOnTop)  ; Creates a new menu item.
@@ -388,6 +391,7 @@ class Weather {
          IniWrite(this.CC, this.iniFile, place, "CC")
          IniWrite(this.Lat, this.iniFile, place, "Lat")
          IniWrite(this.Lon, this.iniFile, place, "Lon")
+         IniWrite(obj.Name, this.iniFile, place, "FullName")
       } Else {
          this.NeedGeo          := TRUE
          this.Ctl.updated.Text := "Location lookup failed for " place
@@ -876,6 +880,158 @@ class MenuDarkMode {
       DllCall(DllCall("GetProcAddress", "Ptr", hMod, "Ptr", 136, "Ptr"))
    }
 }
+
+
+#Requires AutoHotkey v2.1-alpha.1
+
+class LocationManager {
+   static IniFile := A_ScriptDir "\WeatherWidget.ini"
+   static Section := "Locations"
+   static Items := []
+   static Gui := ""
+   static LB := ""
+   static Edit := ""
+
+   static Show() {
+      if this.Gui {
+         this.Gui.Show()
+         return
+      }
+      this.Load()
+      g := this.Gui := Gui(, "Manage Weather Locations")
+      g.SetFont("s10")
+      this.LB := g.AddListBox("xm w310 r15")
+      g.AddButton("x+5 w90", "Move &Up 🡅").OnEvent("Click", this.Move.Bind(this, -1))
+      g.AddButton("xp wp", "Move &Down 🡇").OnEvent("Click", this.Move.Bind(this, 1))
+      g.AddButton("xp wp", "&Remove ✂").OnEvent("Click", this.Remove.Bind(this))
+      this.Edit := g.AddEdit("xm w225")
+      g.AddButton("x+5 yp-3 w85 Default", "🡄 &Add").OnEvent("Click", this.Add.Bind(this))
+      g.AddButton("x+5 wp", "&Close").OnEvent("Click", this.Close.Bind(this))
+      g.OnEvent("Close", this.Close.Bind(this))
+      g.OnEvent("Escape", this.Close.Bind(this))
+      this.Refresh()
+      g.Show()
+   }
+
+   static ReadText(&enc) {
+      enc := "UTF-16"   ; used if the file doesn't exist yet
+      if !FileExist(this.IniFile)
+         return ""
+      f := FileOpen(this.IniFile, "r")
+      enc := f.Encoding
+      if f.Pos = 0 && InStr(enc, "UTF") && !InStr(enc, "RAW")
+         enc .= "-RAW"   ; no BOM in the original, so don't add one
+      text := f.Read()
+      f.Close()
+      return text
+   }
+
+   static Load() {
+      this.Items := []
+      inSec := false
+      for line in StrSplit(this.ReadText(&enc), "`n", "`r") {
+         line := Trim(line)
+         if SubStr(line, 1, 1) = "[" {
+            inSec := (line = "[" this.Section "]")
+            continue
+         }
+         if inSec && line != ""
+            this.Items.Push(line)
+      }
+   }
+
+   static Save() {
+      out := ""
+      skipping := found := false
+      for line in StrSplit(this.ReadText(&enc), "`n", "`r") {
+         t := Trim(line)
+         if SubStr(t, 1, 1) = "[" {
+            if skipping
+               out .= "`r`n"   ; blank line between our section and the next
+            skipping := false
+            out .= line "`r`n"
+            if t = "[" this.Section "]" {
+               found := skipping := true
+               for item in this.Items
+                  out .= item "`r`n"
+            }
+         }
+         else if !skipping
+            out .= line "`r`n"
+      }
+      if !found {
+         out .= (out = "" ? "" : "`r`n") "[" this.Section "]`r`n"
+         for item in this.Items
+            out .= item "`r`n"
+      }
+      f := FileOpen(this.IniFile, "w", enc)
+      f.Write(out)
+      f.Close()
+   }
+
+   static Refresh(sel := 0) {
+      this.LB.Delete()
+      if this.Items.Length
+         this.LB.Add(this.Items)
+      if sel
+         this.LB.Choose(sel)
+   }
+
+   static Add(*) {
+      text := Trim(this.Edit.Value)
+      if text = ""
+         return
+      for item in this.Items {
+         if item = text {   ; case-insensitive duplicate check
+            MsgBox("Already in the list.", "Duplicate", "Icon!")
+            return
+         }
+      }
+      ; Validate via URL
+      If (obj := Weather.GeocodeName(text)) {
+         ; TODO, could write this to settings for to cache it
+         ; Can also cache the obj.name
+         ; this.Lat := obj.lat
+         ; this.Lon := obj.lon
+         ; this.CC := obj.CC
+         this.Items.Push(text) ; obj.name
+         this.Save()
+         this.Refresh(this.Items.Length)
+         this.Edit.Value := ""
+         this.Edit.Focus()
+      } Else {
+         MsgBox("Could not find location " text,,0x10)
+      }
+   }
+
+   static Remove(*) {
+      i := this.LB.Value
+      if !i
+         return
+      this.Items.RemoveAt(i)
+      this.Save()
+      this.Refresh(Min(i, this.Items.Length))
+   }
+
+   static Move(dir, *) {
+      i := this.LB.Value
+      j := i + dir
+      if !i || j < 1 || j > this.Items.Length
+         return
+      tmp := this.Items[i]
+      this.Items[i] := this.Items[j]
+      this.Items[j] := tmp
+      this.Save()
+      this.Refresh(j)
+   }
+
+   static Close(*) {
+      this.Gui.Destroy()
+      this.Gui := ""
+   }
+}
+
+
 ; Start things up here
 MenuDarkMode.Enable(1)   ; use 1 to follow the system theme instead of forcing dark
 Weather.Init()
