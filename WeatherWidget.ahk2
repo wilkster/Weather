@@ -35,6 +35,7 @@ class Weather {
    Static hourIncrement := 3
    Static maxRows       := 8
    Static mks           := 0
+   Static fontScaleFactor := 1
   /*
       WMO Weather Codes Reference
       Code	      Description
@@ -161,13 +162,14 @@ class Weather {
             this.CC      := obj.CC
             this.NeedGeo := false
          }
-         this.Interval      := Integer(IniRead(this.iniFile, A_ComputerName, "Refresh Minutes", 30))
-         this.OnTop         := Integer(IniRead(this.iniFile, A_ComputerName, "OnTop", this.OnTop))
-         this.MKS           := Integer(IniRead(this.iniFile, A_ComputerName, "MKS", this.MKS))
-         this.forecastDays  := Integer(IniRead(this.iniFile, A_ComputerName, "Forecast Days", this.forecastDays))
-         this.hourIncrement := Integer(IniRead(this.iniFile, A_ComputerName, "Hours Increment", this.hourIncrement))
-         this.maxRows       := Integer(IniRead(this.iniFile, A_ComputerName, "Max Rows", this.maxRows))
-         this.useD2D        := Integer(IniRead(this.iniFile, A_ComputerName, "UseD2D", this.useD2D))
+         this.Interval        := Integer(IniRead(this.iniFile, A_ComputerName, "Refresh Minutes", 30))
+         this.OnTop           := Integer(IniRead(this.iniFile, A_ComputerName, "OnTop", this.OnTop))
+         this.MKS             := Integer(IniRead(this.iniFile, A_ComputerName, "MKS", this.MKS))
+         this.forecastDays    := Integer(IniRead(this.iniFile, A_ComputerName, "Forecast Days", this.forecastDays))
+         this.hourIncrement   := Integer(IniRead(this.iniFile, A_ComputerName, "Hours Increment", this.hourIncrement))
+         this.maxRows         := Integer(IniRead(this.iniFile, A_ComputerName, "Max Rows", this.maxRows))
+         this.useD2D          := Integer(IniRead(this.iniFile, A_ComputerName, "UseD2D", this.useD2D))
+         this.fontScaleFactor := Number(IniRead(this.iniFile, A_ComputerName, "FontScaling", this.fontScaleFactor))
 
       } Else {
          this.NeedGeo := false
@@ -188,30 +190,28 @@ class Weather {
          ym adds a margin
          r8 means 8 rows
       */
-      dw := "w260"
-      this.Ctl.loc     := this.AddTextCtl("w170",                this.Name,    "s9  cA6ADC8",      "Segoe UI")  ; subtext0
-      this.Ctl.temp    := this.AddTextCtl("w78 y+2 Right",       "---°",       "s28 cCDD6F4 Bold", "Segoe UI")  ; text
-      this.Ctl.AQI     := this.AddTextCtl("w40 x+0 yp+12 Right", "---",        "s20 cCDD6F4 Bold", "Segoe UI")  ; text (or by level, below)
-      this.Ctl.AQIlab  := this.AddTextCtl("w30 x+2 yp+13",       "aqi",        "s9  cA6ADC8 Norm", "Segoe UI")  ; subtext0
-      this.Ctl.cond    := this.AddTextCtl(dw " xm y+20",         "Loading...", "s13 cB4BEFE Norm", "Segoe UI")  ; lavender
-      this.Ctl.detail  := this.AddTextCtl(dw " y+8",,                          "s11 cBAC2DE",      "Segoe UI")  ; subtext1, note further spacing uses this font
+      dw := fs("w260")
+      this.Ctl.loc     := this.AddTextCtl(fs("w170"),                  this.Name,    fs("s9")  " cA6ADC8",      "Segoe UI")  ; subtext0
+      this.Ctl.temp    := this.AddTextCtl(fs("w78") " y+2 Right",      "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; text
+      this.Ctl.AQI     := this.AddTextCtl(fs("w40") " x+0 yp+12 Right", "---",       fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; text (or by level, below)
+      this.Ctl.AQIlab  := this.AddTextCtl(fs("w30") " x+2 yp+13",      "aqi",        fs("s9")  " cA6ADC8 Norm", "Segoe UI")  ; subtext0
+      this.Ctl.cond    := this.AddTextCtl(dw " xm y+20",               "Loading...", fs("s13") " cB4BEFE Norm", "Segoe UI")  ; lavender
+      this.Ctl.detail  := this.AddTextCtl(dw " y+8",,                                fs("s11") " cBAC2DE",      "Segoe UI")  ; subtext1, note further spacing uses this font
       If (this.useD2D) {
-         this.Ctl.srss   := this.Gui.AddD2DText(dw " y+8", ,                        "Segoe UI", 12, "f3f4cd")   ; Direct Write for emojis
+         this.Ctl.srss   := this.Gui.AddD2DText(dw " y+8", ,                        "Segoe UI", fs(12), "f3f4cd")   ; Direct Write for emojis
          this.Ctl.srss.SetAlign("Center")
-         this.Gui.SetFont("S12", "Consolas") ; Impacts spacing, leave a little extra due to emoji heights. I could force spacing but would be too crowded
-         this.Ctl.hourly := this.Gui.AddD2DText(dw " y+8 r" this.maxRows + 1,,      "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
-         this.Ctl.daily  := this.Gui.AddD2DText(dw " y+8 r" this.forecastDays + 1,, "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
+         this.Gui.SetFont(fs("S12"), "Consolas") ; Impacts spacing, leave a little extra due to emoji heights. I could force spacing but would be too crowded
+         this.Ctl.hourly := this.Gui.AddD2DText(dw " y+8 r" this.maxRows + 1,,      "Consolas", fs(10), "CDD6F4")   ; Direct Write for emojis
+         this.Ctl.daily  := this.Gui.AddD2DText(dw " y+8 r" this.forecastDays + 1,, "Consolas", fs(10), "CDD6F4")   ; Direct Write for emojis
       } Else {
-         this.Ctl.srss    := this.AddTextCtl(dw " y+8 Center", ,                "S12 cf3f4cd",      "Segoe UI")
-         this.Ctl.hourly  := this.AddTextCtl(dw " y+8 r" this.maxRows+1 " y+8",,"s10 cBAC2DE",      "Consolas")  ; subtext1
-         this.Ctl.daily   := this.AddTextCtl(dw " y+8 r" this.forecastDays+1,,  "s10 cCDD6F4",      "Consolas")  ; text
+         this.Ctl.srss    := this.AddTextCtl(dw " y+8 Center", ,                    fs("s12") " cf3f4cd", "Segoe UI")
+         this.Ctl.hourly  := this.AddTextCtl(dw " y+8 r" this.maxRows+1,,           fs("s10") " cBAC2DE", "Consolas")  ; subtext1
+         this.Ctl.daily   := this.AddTextCtl(dw " y+8 r" this.forecastDays+1,,      fs("s10") " cCDD6F4", "Consolas")  ; text
       }
-      this.Ctl.updated := this.AddTextCtl(dw " y+8",,                                 "s8  c7F849C",      "Segoe UI")  ; overlay1
-      this.Ctl.Icon    := g.AddPicture("H96 W96 X160 Y0")
-
-      ; Pretty up the window
-      this.Round11Corners(g.hWnd)
+      this.Ctl.updated := this.AddTextCtl(dw " y+8",,                               fs("s8")  " c7F849C", "Segoe UI")  ; overlay1
+      this.Ctl.Icon    := g.AddPicture(fs("H96") " " fs("W96") " " fs("X160") " Y0")      ; Pretty up the window
       this.DropShadow(g.hWnd) ; also border
+      this.Round11Corners(g.hWnd, 3) ; use slightly smaller corners, lowdpi less clipping on corners
 
       ; Hand mouse drag/tray click/RMB Menu
       OnMessage(0x201, this.Drag.bind(this))
@@ -238,6 +238,16 @@ class Weather {
       this.rowH2 := h2 // (this.maxRows + 1)      
 
       OnExit this.SaveOnExit.bind(this)
+      Return
+      fs(val) {
+         If IsInteger(val)
+            Return Round(val * this.fontScaleFactor)
+         Else If IsAlpha(l := SubStr(val, 1, 1)) {
+            n := Trim(SubStr(val, 2))
+            Return l . Round(n * this.fontScaleFactor)
+         } Else
+            Return ""
+      }
    }
    /**
     * Call after adjusting one of the three settings that impact daily/hourly numbers below
@@ -417,7 +427,7 @@ class Weather {
       IniWrite(Y, this.iniFile, A_ComputerName, "Y")
       this.writeIfBlank(this.Interval, A_ComputerName, "Refresh Minutes")
       this.writeIfBlank(this.forecastDays, A_ComputerName, "Forecast Days")
-      this.writeIfBlank(this.hourIncrement, A_ComputerName, "Hours Increment")
+      this.writeIfBlank(this.fontScaleFactor, A_ComputerName, "FontScaling") ;
       this.writeIfBlank(this.maxRows, A_ComputerName, "Max Rows")
    }
    Static writeIfBlank(val, section, tag) {
@@ -709,10 +719,12 @@ class Weather {
     * Also gives it the standard windows 11 drop shadow
     */
    Static DropShadow(hwnd) {
+      ; Need to support border activation and round corners
       DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 2, "Int*", 2, "UInt", 4)   ; DWMWA_NCRENDERING_POLICY = DWMNCRP_ENABLED
-      mar := Buffer(16, 0)
-      NumPut("Int", 1, "Int", 1, "Int", 1, "Int", 1, mar)   ; left, right, top, bottom
+      NumPut("Int", 1, "Int", 1, "Int", 1, "Int", 1, mar := Buffer(16, 0))   ; left, right, top, bottom
       DllCall("dwmapi\DwmExtendFrameIntoClientArea", "Ptr", hwnd, "Ptr", mar)
+      ; ; DWMWA_BORDER_COLOR = 34, COLORREF is 0x00BBGGRR
+      ; DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 34, "UInt*", 0x808080, "UInt", 4)  
    }
 
    /**
