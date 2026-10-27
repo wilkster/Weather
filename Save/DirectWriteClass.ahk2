@@ -1,0 +1,569 @@
+; https://claude.ai/chat/77b088a4-09e4-4607-ba12-2d8fc255a1be
+; Tom Wilkason
+; Direct Write handler for text widgets
+#Requires AutoHotkey v2.1-
+#DllLoad "ole32.dll"
+#DllLoad "d2d1.dll"
+#DllLoad "dwrite.dll"
+struct D2D1_COLOR_F {
+   r: Float32
+   g: Float32
+   b: Float32
+   a: Float32
+}
+struct D2D1_RECT_F {
+   left  : Float32
+   top   : Float32
+   right : Float32
+   bottom: Float32
+}
+struct D2D1_SIZE_U {
+   width : UInt32
+   height: UInt32
+}
+struct D2D1_PIXEL_FORMAT {
+   format   : UInt32
+   alphaMode: UInt32
+}
+struct D2D1_RENDER_TARGET_PROPERTIES {
+   renderType : UInt32
+   pixelFormat: D2D1_PIXEL_FORMAT
+   dpiX       : Float32
+   dpiY       : Float32
+   usage      : UInt32
+   minLevel   : UInt32
+}
+struct D2D1_HWND_RENDER_TARGET_PROPERTIES {
+   hwnd          : IntPtr
+   pixelSize     : D2D1_SIZE_U
+   presentOptions: UInt32
+}
+struct D2DT_RECT {
+   left  : Int32
+   top   : Int32
+   right : Int32
+   bottom: Int32
+}
+/**
+ * Renders color text (emoji included) into a Text control using Direct2D / DirectWrite.
+ * Create instances with Gui.AddD2DText, which stores the instance on the control (ctrl.D2D),
+ * so you only need to keep the return value if you want to call methods on it later.
+ * Constructing D2DText directly on your own control requires keeping a reference to it.
+ * @example
+ * d := myGui.AddD2DText("w400 r7 cA6ADC8 Background1E1E2E", "Hello 😊")
+ * d.SetAlign("Center")
+ * d.Text := "Updated"
+ */
+class D2DText {
+   /** ID2D1Factory pointer, shared by all instances. */
+   static _d2d := 0
+   /** IDWriteFactory pointer, shared by all instances. */
+   static _dw  := 0
+
+   /** Per-instance COM pointers: render target, brush, text format. */
+   _rt := 0, _brush := 0, _fmt := 0
+   /** Handlers for WM_PAINT / WM_ERASEBKGND, kept so they can be unhooked. */
+   _paintFn := 0, _eraseFn := 0
+   /** Uniform line height and baseline in DIPs; 0 = not set (see SetLineHeight). */
+   _lineH := 0, _lineBase := 0
+   /** Window DPI at target creation, and 96 / DPI (pixels -> DIPs). */
+   _dpi := 96, sf := 1
+
+   /**
+    * Creates the DirectWrite format and Direct2D render target for a Text control and draws the text.
+    * Prefer Gui.AddD2DText, which also creates the control and fills in colors and font from the GUI.
+    * Colors are 0xRRGGBB. The render target uses the window's DPI, so size and pad are DPI-independent.
+    * @param {Gui.Text} ctrl The Text control to render into.
+    * @param {String} [text=""] Initial text.
+    * @param {String} [font="Segoe UI Emoji"] Font family name.
+    * @param {Number} [size=10] Font size in points (same unit as AHK's s10 option).
+    * @param {Integer|String} [fg=0xFFFFFF] Text color, 0xRRGGBB or a "RRGGBB" hex string.
+    * @param {Integer|String} [bg=""] Background color, 0xRRGGBB or a "RRGGBB" hex string. Blank = the GUI's BackColor.
+    * @param {Integer} [weight=400] Font weight (400 = normal, 700 = bold).
+    * @param {Number} [pad=0] Padding between control edge and text, in DIPs (1/96 inch).
+    * @throws {OSError} If a Direct2D or DirectWrite call fails.
+    */
+   __New(ctrl, text := "", font := "Segoe UI Emoji", size := 10, fg := 0xFFFFFF, bg := "", weight := 400, pad := 0) {
+      D2DText._Init()
+      this._ctrl   := ctrl
+      this.sf      := 96 / DllCall("GetDpiForWindow", "Ptr", this._ctrl.Hwnd, "UInt")
+      this._text   := text
+      this._font   := font
+      this._size   := size
+      this._weight := weight || 400      ; 400 = normal; 0 or "" -> normal
+      this._fg     := D2DText._ToRGB(fg)
+      this._bg     := D2DText._ToRGB(bg = "" ? D2DText._GuiBack(ctrl.Gui) : bg)
+      this._pad    := pad
+      this._align  := 0      ; 0 = left, 1 = right, 2 = center
+      this._wrap   := true
+      this._rt     := this._brush := this._fmt := 0
+      this._CreateFormat()
+      this._CreateTarget()
+      this._HookPaint()
+      this.Draw()
+   }
+
+   /**
+    * Returns the GUI's BackColor as 0xRRGGBB, or the system dialog color if the GUI has none.
+    * @param {Gui} g The GUI.
+    * @returns {Integer}
+    */
+   static _GuiBack(g) {
+      if (c := g.BackColor) != ""
+         return D2DText._ToRGB(c)
+      return D2DText._SysColor(15)                               ; COLOR_3DFACE
+   }
+
+   /** Unhooks the paint handlers and releases the render target, brush and text format. */
+   __Delete() {
+      this._UnhookPaint()
+      this._FreeTarget()
+      if this._fmt
+         ObjRelease(this._fmt), this._fmt := 0
+   }
+
+   /** Releases the render target and brush (the device-dependent resources). */
+   _FreeTarget() {
+      if this._brush
+         ObjRelease(this._brush), this._brush := 0
+      if this._rt
+         ObjRelease(this._rt), this._rt := 0
+   }
+
+   /**
+    * Creates a Text control and attaches a D2DText renderer to it. Called through Gui.AddD2DText.
+    * Colors are 0xRRGGBB. Anything left blank is taken from the GUI or the options string:
+    *   bg   -> "BackgroundXXXXXX" in options, else the GUI's BackColor, else the system dialog color
+    *   fg   -> "cXXXXXX" in options, else the system text color
+    *   font/size/weight -> the GUI's current font (read back from the new control)
+    * @param {Gui} g The GUI that owns the control.
+    * @param {String} [options=""] Same options as Gui.AddText (w, r, x, y, c, BackgroundXXXXXX ...).
+    * @param {String} [text=""] Initial text.
+    * @param {String} [font=""] Font family. Blank = GUI's current font.
+    * @param {Number|String} [size=""] Size in points. Blank = GUI's current font size.
+    * @param {Integer|String} [fg=""] Text color, 0xRRGGBB. Blank = see above.
+    * @param {Integer|String} [bg=""] Background color, 0xRRGGBB. Blank = see above.
+    * @param {Integer|String} [weight=""] Font weight (400 = normal, 700 = bold). Blank = GUI's current font weight.
+    * @param {Number} [pad=0] Padding in DIPs (1/96 inch).
+    * @returns {D2DText} The renderer. The control is available as .Ctrl, and the renderer as ctrl.D2D.
+    */
+   static Create(g, options := "", text := "", font := "", size := "", fg := "", bg := "", weight := "", pad := 0) {
+      ; The native control is created with the text so r/w auto-sizing works and screen readers still see it.
+      ctrl := g.AddText(options, text)
+
+      ; Font defaults: read the LOGFONT the control inherited from the GUI
+      if font = "" || size = "" || weight = "" {
+         lf := Buffer(92, 0)
+         hFont := SendMessage(0x31, 0, 0, ctrl)                  ; WM_GETFONT
+         if hFont && DllCall("GetObject", "Ptr", hFont, "Int", 92, "Ptr", lf) {
+            dpi := DllCall("GetDpiForWindow", "Ptr", ctrl.Hwnd, "UInt")
+            if font = ""
+               font := StrGet(lf.Ptr + 28, 32)                   ; lfFaceName
+            if size = ""
+               size := Round(-NumGet(lf, 0, "Int") * 72 / dpi, 1) ; lfHeight (px) -> points
+            if weight = ""
+               weight := NumGet(lf, 16, "Int")                   ; lfWeight
+         }
+         if font = ""
+            font := "Segoe UI"
+         if size = ""
+            size := 9
+         if !weight                                              ; "" or 0 -> normal
+            weight := 400
+      }
+
+      ; Background: option > GUI BackColor > system dialog color
+      if bg = "" {
+         if RegExMatch(options, "i)(?:^|\s)Background([0-9a-f]{6})(?=\s|$)", &m)
+            bg := Integer("0x" m[1])
+         else
+            bg := D2DText._GuiBack(g)
+      }
+
+      ; Text color: option > system text color (SetFont colors can't be read back)
+      if fg = "" {
+         if RegExMatch(options, "i)(?:^|\s)c([0-9a-f]{6})(?=\s|$)", &m)
+            fg := Integer("0x" m[1])
+         else
+            fg := D2DText._SysColor(8)                           ; COLOR_WINDOWTEXT
+      }
+
+      inst := D2DText(ctrl, text, font, size, fg, bg, weight, pad)
+      ctrl.D2D := inst           ; keeps the instance alive as long as the control exists
+      return inst
+   }
+
+   /** The Text control this instance draws into. */
+   Ctrl => this._ctrl
+
+   /**
+    * Returns a system color as 0xRRGGBB.
+    * @param {Integer} idx GetSysColor index.
+    * @returns {Integer}
+    */
+   static _SysColor(idx) {
+      c := DllCall("GetSysColor", "Int", idx, "UInt")            ; COLORREF is 0x00BBGGRR
+      return (c & 0xFF) << 16 | (c >> 8 & 0xFF) << 8 | (c >> 16 & 0xFF)
+   }
+
+   /**
+    * The displayed text. Assigning a new value repaints the control.
+    * @type {String}
+    */
+   Text {
+      get => this._text
+      set {
+         this._text := value
+         this.Refresh()
+      }
+   }
+
+   /**
+    * Changes the font and repaints. Alignment, wrap and line height are preserved.
+    * @param {String} font Font family name.
+    * @param {Number} size Font size in points.
+    * @throws {OSError} If the text format cannot be created.
+    */
+   SetFont(font, size) {
+      this._font := font
+      this._size := size
+      if this._fmt
+         ObjRelease(this._fmt), this._fmt := 0
+      this._CreateFormat()
+      this.Refresh()
+   }
+
+   /**
+    * Changes the text and/or background color and repaints. Omit an argument to keep its current value.
+    * @param {Integer|String} [fg] Text color, 0xRRGGBB (or a "RRGGBB" hex string).
+    * @param {Integer|String} [bg] Background color, 0xRRGGBB (or a "RRGGBB" hex string).
+    */
+   SetColors(fg?, bg?) {
+      this._fg := IsSet(fg) ? D2DText._ToRGB(fg) : this._fg
+      this._bg := IsSet(bg) ? D2DText._ToRGB(bg) : this._bg
+      if this._brush
+         ComCall(8, this._brush, "Ptr", D2DText._Color(this._fg), "Int")   ; ID2D1SolidColorBrush::SetColor (void)
+      this.Refresh()
+   }
+
+   /**
+    * Normalizes a color to an integer 0xRRGGBB.
+    * @param {Integer|String} c An integer, or a hex string such as "A6ADC8" or "0xA6ADC8".
+    * @returns {Integer}
+    */
+   static _ToRGB(c) {
+      if c is Integer
+         return c
+      c := String(c)
+      return Integer(SubStr(c, 1, 2) = "0x" ? c : "0x" c)
+   }
+
+   /**
+    * Moves/resizes the underlying control, then resizes the render target to match.
+    * @param args Same arguments as Gui.Control.Move.
+    */
+   Move(args*) {
+      this._ctrl.Move(args*)
+      this.Resize()
+   }
+
+   /**
+    * Sets horizontal text alignment and repaints.
+    * @param {String} [align="Left"] "Left", "Center" or "Right".
+    */
+   SetAlign(align := "Left") {
+      this._align := align = "Center" ? 2 : align = "Right" ? 1 : 0
+      ComCall(3, this._fmt, "Int", this._align)                  ; SetTextAlignment
+      this.Refresh()
+   }
+
+   /**
+    * Turns word wrapping on or off and repaints.
+    * @param {Boolean} [on=true] True to wrap at the control edge, false for no wrapping.
+    */
+   SetWrap(on := true) {
+      this._wrap := on
+      ComCall(5, this._fmt, "Int", on ? 0 : 1)                   ; SetWordWrapping
+      this.Refresh()
+   }
+
+   /** Resizes the render target to the control's current client size and repaints. Called by Move; call it yourself if you resize the control another way. */
+   Resize() {
+      this._ClientSize(&w, &h)
+      sz := D2D1_SIZE_U()
+      sz.width := w, sz.height := h
+      ComCall(58, this._rt, "ptr", sz)                           ; ID2D1HwndRenderTarget::Resize
+      this.Refresh()
+   }
+
+   /** Invalidates the control and repaints it now through the WM_PAINT path (_OnPaint). Use this instead of Draw for updates. */
+   Refresh() {
+      DllCall("InvalidateRect", "Ptr", this._ctrl.Hwnd, "Ptr", 0, "Int", 0)
+      DllCall("UpdateWindow", "Ptr", this._ctrl.Hwnd)
+      ; OutputDebug("Refreshing " this._ctrl.Hwnd)
+   }
+   /**
+    * Repaints every D2DText control in a GUI.
+    * @param {Gui} g The GUI to refresh.
+    */
+   static RefreshAll(g) {
+      for hwnd, ctrl in g
+         if ctrl.HasProp("D2D")
+            ctrl.D2D.Refresh()
+   }
+   /**
+    * Paints immediately: clears the background and draws the text. Called from _OnPaint and __New;
+    * use Refresh() for everything else. If the device was lost (D2DERR_RECREATE_TARGET),
+    * the render target is rebuilt and drawing is retried.
+    */
+   Draw() {
+      this._ClientSize(&w, &h)
+
+      rt := this._rt
+      ComCall(48, rt, "Int")                                     ; BeginDraw (void)
+      ComCall(47, rt, "Ptr", D2DText._Color(this._bg), "Int")    ; Clear (void)
+
+      p := this._pad
+      rc := D2D1_RECT_F()
+      rc.left := p, rc.top := p
+      rc.right := w * this.sf - p, rc.bottom := h * this.sf - p
+      ; 4 = D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT
+      ComCall(27, rt
+         , "Str", this._text
+         , "UInt", StrLen(this._text)
+         , "Ptr", this._fmt
+         , "Ptr", rc
+         , "Ptr", this._brush
+         , "Int", 4
+         , "Int", 0
+         , "Int")   ; DrawText (void)
+
+      ; "Int" return type so D2DERR_RECREATE_TARGET is returned instead of thrown
+      hr := ComCall(49, rt, "Ptr", 0, "Ptr", 0, "Int")           ; EndDraw
+      if (hr & 0xFFFFFFFF) = 0x8899000C {   ; D2DERR_RECREATE_TARGET
+         this._FreeTarget()
+         this._CreateTarget()
+         this.Draw()
+      } else if hr
+         OutputDebug "EndDraw hr=" Format("{:#x}", hr & 0xFFFFFFFF)
+   }
+
+   /**
+    * Creates the HWND render target at the window's DPI (physical-pixel size from GetClientRect) and the solid color brush.
+    * @throws {OSError} If the render target or brush cannot be created.
+    */
+   _CreateTarget() {
+      this._ClientSize(&w, &h)
+      this._dpi := DllCall("GetDpiForWindow", "Ptr", this._ctrl.Hwnd, "UInt")
+
+      rtp := D2D1_RENDER_TARGET_PROPERTIES()
+      rtp.dpiX := rtp.dpiY := this._dpi
+
+      hp := D2D1_HWND_RENDER_TARGET_PROPERTIES()
+      hp.hwnd := this._ctrl.Hwnd
+      hp.pixelSize.width := w
+      hp.pixelSize.height := h
+
+      rt := 0
+      ComCall(14, D2DText._d2d, "Ptr", rtp, "Ptr", hp, "Ptr*", &rt)       ; CreateHwndRenderTarget
+      this._rt := rt
+
+      br := 0
+      ComCall(8, rt, "Ptr", D2DText._Color(this._fg), "Ptr", 0, "Ptr*", &br)   ; CreateSolidColorBrush
+      this._brush := br
+   }
+
+   /**
+    * Creates the IDWriteTextFormat from the current font and size (points, converted to DIPs),
+    * then applies the stored alignment, wrap and line height.
+    * @throws {OSError} If the text format cannot be created.
+    */
+   _CreateFormat() {
+      fmt := 0
+      ComCall(15, D2DText._dw
+         , "WStr", this._font
+         , "Ptr", 0
+         , "Int", this._weight
+         , "Int", 0
+         , "Int", 5
+         , "Float", this._size * 96 / 72
+         , "WStr", "en-us"
+         , "Ptr*", &fmt
+      )                        ; CreateTextFormat
+      this._fmt := fmt
+      ComCall(3, fmt, "Int", this._align)                        ; SetTextAlignment
+      ComCall(5, fmt, "Int", this._wrap ? 0 : 1)                 ; SetWordWrapping
+      this._ApplyLineHeight()
+   }
+
+   /**
+    * Creates the shared Direct2D and DirectWrite factories once. The DLLs stay loaded via #DllLoad.
+    * These are plain DLL exports, not COM methods, so they use DllCall.
+    * @throws {OSError} If either factory cannot be created.
+    */
+   static _Init() {
+      if this._d2d
+         return
+
+      iid := Buffer(16)
+      DllCall("ole32\CLSIDFromString", "Str", "{06152247-6f50-465a-9245-118bfd3b6007}", "Ptr", iid)
+      f := 0
+      hr := DllCall("d2d1\D2D1CreateFactory", "Int", 0, "Ptr", iid, "Ptr", 0, "Ptr*", &f, "Int")
+      if hr || !f
+         throw OSError(hr, , "D2D1CreateFactory")
+      this._d2d := f
+
+      iid := Buffer(16)
+      DllCall("ole32\CLSIDFromString", "Str", "{b859ee5a-d838-4b5b-a2e8-1adc7d93db48}", "Ptr", iid)
+      d := 0
+      hr := DllCall("dwrite\DWriteCreateFactory", "Int", 0, "Ptr", iid, "Ptr*", &d, "Int")
+      if hr || !d
+         throw OSError(hr, , "DWriteCreateFactory")
+      this._dw := d
+   }
+
+   /**
+    * Builds a D2D1_COLOR_F (4 floats, RGBA) from a 0xRRGGBB value.
+    * @param {Integer|String} rgb Color, 0xRRGGBB or a "RRGGBB" hex string.
+    * @param {Number} [a=1.0] Alpha, 0.0 to 1.0.
+    * @returns {Buffer} 16-byte D2D1_COLOR_F structure.
+    */
+   static _Color(rgb, a := 1.0) {
+      rgb := D2DText._ToRGB(rgb)
+      c := D2D1_COLOR_F()
+      c.r := (rgb >> 16 & 0xFF) / 255
+      c.g := (rgb >> 8 & 0xFF) / 255
+      c.b := (rgb & 0xFF) / 255
+      c.a := a
+      return c
+   }
+
+   /**
+    * Forces a fixed line height so fallback fonts (e.g. emoji) can't make lines taller.
+    * @param {Number} [px] Line height in physical pixels. Omit to match the control's own GDI font
+    *                      (tmHeight + tmExternalLeading), so r7 / r1 sizing lines up exactly.
+    */
+   SetLineHeight(px?) {
+      if !IsSet(px) {
+         hdc := DllCall("GetDC", "Ptr", this._ctrl.Hwnd, "Ptr")
+         hFont := SendMessage(0x31, 0, 0, this._ctrl)            ; WM_GETFONT
+         old := DllCall("SelectObject", "Ptr", hdc, "Ptr", hFont, "Ptr")
+         tm := Buffer(80, 0)
+         DllCall("GetTextMetrics", "Ptr", hdc, "Ptr", tm)
+         DllCall("SelectObject", "Ptr", hdc, "Ptr", old)
+         DllCall("ReleaseDC", "Ptr", this._ctrl.Hwnd, "Ptr", hdc)
+         px := NumGet(tm, 0, "Int") + NumGet(tm, 16, "Int")      ; tmHeight + tmExternalLeading
+         asc := NumGet(tm, 4, "Int")                             ; tmAscent
+      } else
+         asc := px * 0.8
+      this._lineH := px * this.sf                                ; pixels -> DIPs
+      this._lineBase := asc * this.sf
+      this._ApplyLineHeight()
+      this.Refresh()
+   }
+
+   /** Applies the stored uniform line height to the current text format, if one was set. */
+   _ApplyLineHeight() {
+      if this._lineH
+         ComCall(10, this._fmt, "Int", 1, "Float", this._lineH, "Float", this._lineBase)   ; SetLineSpacing, UNIFORM
+   }
+
+   /**
+    * Hooks WM_PAINT and WM_ERASEBKGND on the control so Direct2D owns its painting.
+    * The paint handler captures only the instance's address (ObjPtr), not a reference, so the
+    * control's handler list doesn't keep the instance alive and __Delete can run.
+    */
+   _HookPaint() {
+      ptr := ObjPtr(this)
+      this._paintFn := (*) => ObjFromPtrAddRef(ptr)._OnPaint()
+      this._eraseFn := (*) => 1
+      this._ctrl.OnMessage(0x000F, this._paintFn)   ; WM_PAINT
+      this._ctrl.OnMessage(0x0014, this._eraseFn)   ; WM_ERASEBKGND
+   }
+
+   /**
+    * WM_PAINT handler: BeginPaint/EndPaint consume the update region while Draw() paints.
+    * Returns 0 to skip the static control's own painting.
+    */
+   _OnPaint() {
+      ps := Buffer(A_PtrSize = 8 ? 72 : 64, 0)                     ; PAINTSTRUCT
+      DllCall("BeginPaint", "Ptr", this._ctrl.Hwnd, "Ptr", ps, "Ptr")
+      this.Draw()
+      DllCall("EndPaint", "Ptr", this._ctrl.Hwnd, "Ptr", ps)
+      ; OutputDebug("WeatherWidget OnPaint Received: " this._ctrl.Hwnd)
+      return 0
+   }
+
+   /** Removes the paint hooks (safe if the control is already destroyed). */
+   _UnhookPaint() {
+      if !this._paintFn
+         return
+      try this._ctrl.OnMessage(0x000F, this._paintFn, 0)
+      try this._ctrl.OnMessage(0x0014, this._eraseFn, 0)
+      this._paintFn := this._eraseFn := 0
+   }
+
+   /**
+    * Gets the control's client size in physical pixels (GetPos reports scaled units under +DPIScale).
+    * @param {VarRef} w Receives the width in pixels.
+    * @param {VarRef} h Receives the height in pixels.
+    */
+   _ClientSize(&w, &h) {
+      DllCall("GetClientRect", "Ptr", this._ctrl.Hwnd, D2DT_RECT, rc:= D2DT_RECT())
+      w := rc.right, h := rc.bottom
+   }
+
+   /**
+    * Gets the control's position and size in the GUI's scaled units (not physical pixels under +DPIScale).
+    * @param {VarRef} [X] Receives the x position.
+    * @param {VarRef} [Y] Receives the y position.
+    * @param {VarRef} [W] Receives the width.
+    * @param {VarRef} [H] Receives the height.
+    */
+   GetPos(&X?, &Y?, &W?, &H?) {
+      this._ctrl.GetPos(&X, &Y, &W, &H)
+   }
+}
+;@reference DirectWriteClass.d.ahk
+Gui.Prototype.DefineProp("AddD2DText", {Call: (g, args*) => D2DText.Create(g, args*)})
+
+/*
+Notes:
+- Colors, font, size and weight are captured when the control is created. A later oGui.BackColor or
+  oGui.SetFont call doesn't affect existing D2D controls; use SetColors / SetFont on the instance.
+- Colors given as options (cXXXXXX, BackgroundXXXXXX) must be 6-digit hex. Named colors are not parsed
+  and fall back to the GUI BackColor / system colors; a named BackColor makes AddD2DText throw.
+- AHK can't read back the color set by oGui.SetFont("cXXXXXX"), so pass cXXXXXX in the options or fg.
+- Font weight is read from the GUI font (or pass weight explicitly: 400 normal, 700 bold). Italic is not supported.
+- Pass the family name only in font ("Consolas", not "Consolas bold"); use weight for bold.
+- pad defaults to 0 so the text lines up with a native Text control.
+- The instance and its control reference each other (ctrl.D2D), so __Delete runs at script exit,
+  not when the GUI is destroyed.
+- Emoji fallback fonts can increase line height; call SetLineHeight() to match native r<N> sizing.
+- ComCall with the default "HRESULT" return type throws an OSError on failure. Void methods
+  (BeginDraw, Clear, DrawText, SetColor) and EndDraw use "Int" so nothing is thrown for them.
+- Not yet handling dynamic DPI if moved between monitors with different DPIs, would need to handle DPI change
+*/
+
+/*
+PruneMemory() => DllCall("psapi\EmptyWorkingSet", "ptr", -1)
+
+; --- Demo ---
+txt := ""
+Loop 7 {
+   txt .= a_index " Emoji=☀⛅☁☂☔⛈❄⛄⛈`n"
+}
+oGui := Gui("+Border +DPIScale +E0x02000000", "D2DText demo")
+oGui.BackColor := "545485"
+oGui.MarginX := 10, oGui.MarginY := 8
+oGui.SetFont("s10  cA6ADC8", "Consolas")
+tb0 := oGui.AddText("w400 r7 Background1E1E2E",txt)
+
+d1 := oGui.AddD2DText("w400 r7 cA6ADC8 Background1E1E2E", txt)   ; colors from options
+d1.SetLineHeight()
+d2 := oGui.AddD2DText("w400 r1 cA6ADC8", "☀⛅☁☂☔⛈❄⛄⛈")          ; background = GUI BackColor
+
+oGui.Show("AutoSize")
+PruneMemory()
+oGui.OnEvent("Close", (*) => ExitApp())
+*/

@@ -1,0 +1,19 @@
+#Requires AutoHotkey v2.0
+#SingleInstance Force
+SetWorkingDir(A_ScriptDir)
+
+exe := "WeatherWidget.exe"
+wasRunning := false
+
+if (pid := ProcessExist(exe)) {
+   wasRunning := true
+   DetectHiddenWindows(true)
+   WinClose("ahk_class AutoHotkey ahk_pid " pid)   ; WM_CLOSE to main window, runs OnExit
+   if !ProcessWaitClose(pid, 10)                    ; 0 = timed out
+      ProcessClose(pid)                             ; fall back to force kill
+}
+
+RunWait('"C:\Apps\AHK\V2\Ahk2Exe.exe" /in "WeatherWidget.ahk2" /icon "Partly Cloudy.ico" /base "C:\Apps\AHK\V2\AutoHotkey64.exe" /out "' exe '"')
+Sleep(200)
+if wasRunning
+   Run(exe)

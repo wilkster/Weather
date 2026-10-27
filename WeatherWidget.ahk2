@@ -359,19 +359,18 @@ class Weather {
       sub := Menu()
       Loop mx {
          I := Integer(A_Index * inc)
-         sub.Add(I, this.SetNum.Bind(this, prop, iniKey, sub))
+         sub.Add(I, this.SetNum.Bind(this, prop, iniKey))
          if (I = this.%prop%)
             sub.Check(I)
       }
       return sub
    }
-   ; Set the menu with a new value on submenu selections
-   static SetNum(prop, iniKey, sub, itemName, *) {
+   static SetNum(prop, iniKey, itemName, itemPos, sub) {
       Try sub.Uncheck(this.%prop%) ; skip if value was set not on the menu
-      this.%prop% := Integer(itemName) ; set the new value
+      this.%prop% := Integer(itemName)
       sub.Check(itemName)
       IniWrite(this.%prop%, this.iniFile, A_ComputerName, iniKey)
-      this.ApplyRowCounts()   ; from the earlier no-recreate approach
+      this.ApplyRowCounts()
    }
    
    /**
