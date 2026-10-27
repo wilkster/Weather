@@ -67,7 +67,8 @@ class D2DText {
    /** Uniform line height and baseline in DIPs; 0 = not set (see SetLineHeight). */
    _lineH := 0, _lineBase := 0
    /** Window DPI at target creation, and 96 / DPI (pixels -> DIPs). */
-   _dpi := 96, sf := 1
+   _dpi := 96, sf := 1, _pw := 0, _ph := 0
+   _dpiFn := 0
 
    /**
     * Creates the DirectWrite format and Direct2D render target for a Text control and draws the text.
@@ -288,14 +289,14 @@ class D2DText {
    }
 
    /** Resizes the render target to the control's current client size and repaints. Called by Move; call it yourself if you resize the control another way. */
-   Resize() {
-      this._ClientSize(&w, &h)
-      sz := D2D1_SIZE_U()
-      sz.width := w, sz.height := h
-      ComCall(58, this._rt, "ptr", sz)                           ; ID2D1HwndRenderTarget::Resize
-      this.Refresh()
-   }
-
+   ; Resize() {
+   ;    this._ClientSize(&w, &h)
+   ;    sz := D2D1_SIZE_U()
+   ;    sz.width := w, sz.height := h
+   ;    ComCall(58, this._rt, "ptr", sz)                           ; ID2D1HwndRenderTarget::Resize
+   ;    this.Refresh()
+   ; }
+   Resize() => this.Refresh()
    /** Invalidates the control and repaints it now through the WM_PAINT path (_OnPaint). Use this instead of Draw for updates. */
    Refresh() {
       DllCall("InvalidateRect", "Ptr", this._ctrl.Hwnd, "Ptr", 0, "Int", 0)
@@ -317,8 +318,9 @@ class D2DText {
     * the render target is rebuilt and drawing is retried.
     */
    Draw() {
-      this._ClientSize(&w, &h)
-
+      ; this._ClientSize(&w, &h)
+      this._SyncTarget()
+      w := this._pw, h := this._ph
       rt := this._rt
       ComCall(48, rt, "Int")                                     ; BeginDraw (void)
       ComCall(47, rt, "Ptr", D2DText._Color(this._bg), "Int")    ; Clear (void)
@@ -354,7 +356,9 @@ class D2DText {
     */
    _CreateTarget() {
       this._ClientSize(&w, &h)
+      this._pw := w, this._ph := h
       this._dpi := DllCall("GetDpiForWindow", "Ptr", this._ctrl.Hwnd, "UInt")
+      this.sf := 96 / this._dpi
 
       rtp := D2D1_RENDER_TARGET_PROPERTIES()
       rtp.dpiX := rtp.dpiY := this._dpi
@@ -372,7 +376,21 @@ class D2DText {
       ComCall(8, rt, "Ptr", D2DText._Color(this._fg), "Ptr", 0, "Ptr*", &br)   ; CreateSolidColorBrush
       this._brush := br
    }
-
+   /** Brings the render target in line with the window's current DPI and client size. Called at the start of Draw. */
+   _SyncTarget() {
+      dpi := DllCall("GetDpiForWindow", "Ptr", this._ctrl.Hwnd, "UInt")
+      this._ClientSize(&w, &h)
+      if dpi = this._dpi && w = this._pw && h = this._ph
+         return
+      if dpi != this._dpi {
+         this._dpi := dpi, this.sf := 96 / dpi
+         ComCall(51, this._rt, "Float", dpi, "Float", dpi, "Int")   ; ID2D1RenderTarget::SetDpi (void)
+      }
+      sz := D2D1_SIZE_U()
+      sz.width := w, sz.height := h
+      this._pw := w, this._ph := h
+      ComCall(58, this._rt, "Ptr", sz)                              ; ID2D1HwndRenderTarget::Resize
+   }
    /**
     * Creates the IDWriteTextFormat from the current font and size (points, converted to DIPs),
     * then applies the stored alignment, wrap and line height.
@@ -474,6 +492,8 @@ class D2DText {
     * control's handler list doesn't keep the instance alive and __Delete can run.
     */
    _HookPaint() {
+      this._dpiFn := (*) => ObjFromPtrAddRef(ptr).Refresh()
+      this._ctrl.OnMessage(0x02E3, this._dpiFn)     ; WM_DPICHANGED_AFTERPARENT
       ptr := ObjPtr(this)
       this._paintFn := (*) => ObjFromPtrAddRef(ptr)._OnPaint()
       this._eraseFn := (*) => 1
@@ -498,6 +518,8 @@ class D2DText {
    _UnhookPaint() {
       if !this._paintFn
          return
+      try this._ctrl.OnMessage(0x02E3, this._dpiFn, 0)
+      this._dpiFn := 0         
       try this._ctrl.OnMessage(0x000F, this._paintFn, 0)
       try this._ctrl.OnMessage(0x0014, this._eraseFn, 0)
       this._paintFn := this._eraseFn := 0

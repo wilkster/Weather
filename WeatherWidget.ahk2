@@ -11,6 +11,8 @@
 /*
 TODO
 - seems to stay on all desktops, this is desired
+- Handle DPI Changed, the GUI size needs to reisze and so do D2D fonts.
+  A_ScreenDPI needs replacement, check/fix with D2D disabled first.
 - Base font size and all fonts scale from that (or multiplier)
 - Don;t make static so would could have multiple instances at once for different locations
   Pass in location name into __Init
@@ -209,7 +211,7 @@ class Weather {
 
       ; Pretty up the window
       this.Round11Corners(g.hWnd)
-      this.DropShadow(g.hWnd)
+      this.DropShadow(g.hWnd) ; also border
 
       ; Hand mouse drag/tray click/RMB Menu
       OnMessage(0x201, this.Drag.bind(this))
@@ -222,11 +224,11 @@ class Weather {
 
       ; Keep on visible monitors, measure first
       g.Show("NoActivate Hide AutoSize")
-      g.GetPos(,,&W, &H)
-      X := Min(IniRead(this.iniFile, A_ComputerName, "X", 0), SysGet(78) - W * A_ScreenDPI / 96)
-      Y := Min(IniRead(this.iniFile, A_ComputerName, "Y", 0), SysGet(79) - H * A_ScreenDPI / 96)
+      X := IniRead(this.iniFile, A_ComputerName, "X", 0)
+      Y := IniRead(this.iniFile, A_ComputerName, "Y", 0)
       this.gui.opt(this.OnTop ? "+AlwaysOnTop" : "-AlwaysOnTop")
       g.Show("NoActivate x" X " y" Y)
+      this.SnapToWorkArea(0, 0, 0, g.Hwnd) ; in case it was off the screen
       this.RefreshData()
 
       ; in Init, after the controls are created
@@ -242,8 +244,8 @@ class Weather {
     */
    Static ApplyRowCounts() {
       c := this.Ctl
-      gap := 8 * A_ScreenDPI / 96          ; matches your y+8, or measure it once in Init
-      c.hourly.GetPos(, &hY)
+      gap := 8        ; matches your y+8, or measure it once in Init, TODO: May not need to scale
+      c.hourly.GetPos(, &hY) ; DPI Scaled
       hH := this.rowH2 * (this.maxRows + 1)
       dH := this.rowH1 * (this.forecastDays + 1)
       dY := hY + hH + gap
@@ -676,7 +678,7 @@ class Weather {
       }
       static daynight(dn) => !IsNumber(dn) ? "?" : dn ? "🌞" : "🌙"
    }
-
+   Static Dpi()               => DllCall("GetDpiForWindow", "Ptr", Weather.Gui.Hwnd, "UInt")
    static Section(json, name) => RegExMatch(json, '"' name '":\{([^}]*)\}', &m) ? m[1] : ""
    static Value(sec, key)     => RegExMatch(sec, '"' key '":(-?[\d.]+)', &m) ? m[1] : ""
    static List(sec, key)      => RegExMatch(sec, '"' key '":\[([^\]]*)\]', &m) ? StrSplit(m[1], ",") : []
