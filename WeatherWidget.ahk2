@@ -199,14 +199,14 @@ class Weather {
          this.Ctl.srss   := this.Gui.AddD2DText(dw " y+8", ,                        "Segoe UI", 12, "f3f4cd")   ; Direct Write for emojis
          this.Ctl.srss.SetAlign("Center")
          this.Gui.SetFont("S12", "Consolas") ; Impacts spacing, leave a little extra due to emoji heights. I could force spacing but would be too crowded
-         this.Ctl.hourly := this.Gui.AddD2DText(dw " y+12 r" this.maxRows + 1,,      "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
-         this.Ctl.daily  := this.Gui.AddD2DText(dw " y+10 r" this.forecastDays + 1,, "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
+         this.Ctl.hourly := this.Gui.AddD2DText(dw " y+8 r" this.maxRows + 1,,      "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
+         this.Ctl.daily  := this.Gui.AddD2DText(dw " y+8 r" this.forecastDays + 1,, "Consolas", 10, "CDD6F4")   ; Direct Write for emojis
       } Else {
          this.Ctl.srss    := this.AddTextCtl(dw " y+8 Center", ,                "S12 cf3f4cd",      "Segoe UI")
-         this.Ctl.hourly  := this.AddTextCtl(dw " y+12 r" this.maxRows+1 " y+8",,"s10 cBAC2DE",      "Consolas")  ; subtext1
-         this.Ctl.daily   := this.AddTextCtl(dw " y+12 r" this.forecastDays+1,,  "s10 cCDD6F4",      "Consolas")  ; text
+         this.Ctl.hourly  := this.AddTextCtl(dw " y+8 r" this.maxRows+1 " y+8",,"s10 cBAC2DE",      "Consolas")  ; subtext1
+         this.Ctl.daily   := this.AddTextCtl(dw " y+8 r" this.forecastDays+1,,  "s10 cCDD6F4",      "Consolas")  ; text
       }
-      this.Ctl.updated := this.AddTextCtl(dw,,                                 "s8  c7F849C",      "Segoe UI")  ; overlay1
+      this.Ctl.updated := this.AddTextCtl(dw " y+8",,                                 "s8  c7F849C",      "Segoe UI")  ; overlay1
       this.Ctl.Icon    := g.AddPicture("H96 W96 X160 Y0")
 
       ; Pretty up the window
@@ -243,15 +243,16 @@ class Weather {
     * Call after adjusting one of the three settings that impact daily/hourly numbers below
     */
    Static ApplyRowCounts() {
+      ; This is somewhat inexact
       c := this.Ctl
-      gap := 8        ; matches your y+8, or measure it once in Init, TODO: May not need to scale
+      gap := 8  * this.Dpi() / 96  ; matches your y+8, or measure it once in Init, TODO: May not need to scale
       c.hourly.GetPos(, &hY) ; DPI Scaled
       hH := this.rowH2 * (this.maxRows + 1)
       dH := this.rowH1 * (this.forecastDays + 1)
       dY := hY + hH + gap
-      c.hourly.Move(, , , hH)
-      c.daily.Move(, dY, , dH)
-      c.updated.Move(, dY + dH + gap)
+      c.hourly.Move(, , , hH) ; adjust height onlu
+      c.daily.Move(, dY, , dH) ; height and new Y
+      c.updated.Move(, dY + dH + gap) ; new Y only
       this.Gui.Show("NoActivate AutoSize")
       this.RefreshData()
    }
