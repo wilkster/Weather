@@ -322,7 +322,7 @@ class Weather {
       } else
          this.Menu.Add("Refresh now", this.cbUpdateData)
       this.Menu.add()
-      this.Menu.Add("Display Forecast Days",   this.BuildNumMenu("forecastDays", "Forecast Days", 10))
+      this.Menu.Add("Display Forecast Days",   this.BuildNumMenu("forecastDays", "Forecast Days", 16))
       this.Menu.Add("Display Max Hourly Rows", this.BuildNumMenu("maxRows", "Max Rows", 15))
       this.Menu.Add("Display Hourly Interval", this.BuildNumMenu("hourIncrement", "Hours Increment", 6))
       this.Menu.Add("Refresh Minute Interval", this.BuildNumMenu("Interval", "Refresh Minutes", 12, 5))
@@ -892,7 +892,7 @@ class LocationManager {
    static LB := ""
    static Edit := ""
 
- static InitW := 430
+   static InitW := 430
    static InitH := 340
    static Margin := 10
    static Gap := 5
@@ -977,7 +977,7 @@ class LocationManager {
       inSec := false
       for line in StrSplit(this.ReadText(&enc), "`n", "`r") {
          line := Trim(line)
-         if SubStr(line, 1, 1) = "[" {
+         if RegExMatch(line, "^\[[^\]]+\]$") {
             inSec := (line = "[" this.Section "]")
             continue
          }
@@ -991,18 +991,16 @@ class LocationManager {
       skipping := found := false
       for line in StrSplit(this.ReadText(&enc), "`n", "`r") {
          t := Trim(line)
-         if SubStr(t, 1, 1) = "[" {
-            if skipping
-               out .= "`r`n"   ; blank line between our section and the next
+         if RegExMatch(t, "^\[[^\]]+\]$") {
             skipping := false
-            out .= line "`r`n"
+            out .= (out = "" ? "" : "`r`n") line "`r`n"   ; blank line before every header except the first
             if t = "[" this.Section "]" {
                found := skipping := true
                for item in this.Items
                   out .= item "`r`n"
             }
          }
-         else if !skipping
+         else if !skipping && t != ""
             out .= line "`r`n"
       }
       if !found {
@@ -1024,29 +1022,31 @@ class LocationManager {
    }
 
    static Add(*) {
-      text := Trim(this.Edit.Value)
-      if text = ""
+      place := Trim(this.Edit.Value)
+      if place = ""
          return
       for item in this.Items {
-         if item = text {   ; case-insensitive duplicate check
+         if item = place {   ; case-insensitive duplicate check
             MsgBox("Already in the list.", "Duplicate", "Icon!")
             return
          }
       }
       ; Validate via URL
-      If (obj := Weather.GeocodeName(text)) {
-         ; TODO, could write this to settings for to cache it
-         ; Can also cache the obj.name
-         ; this.Lat := obj.lat
-         ; this.Lon := obj.lon
-         ; this.CC := obj.CC
-         this.Items.Push(text) ; obj.name
+      If (obj := Weather.GeocodeName(place)) {
+         ; Cache location to INI file
+         IniWrite(place, this.iniFile, A_ComputerName, "Loc")
+         IniWrite(obj.CC, this.iniFile, place, "CC")
+         IniWrite(obj.Lat, this.iniFile, place, "Lat")
+         IniWrite(obj.Lon, this.iniFile, place, "Lon")
+         IniWrite(obj.Name, this.iniFile, place, "FullName")
+         ; Save the new location
+         this.Items.Push(place)
          this.Save()
          this.RefreshListBox(this.Items.Length)
          this.Edit.Value := ""
          this.Edit.Focus()
       } Else {
-         MsgBox("Could not find location " text,,0x10)
+         MsgBox("Could not find location " place,,0x10)
       }
    }
 
