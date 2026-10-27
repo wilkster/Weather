@@ -11,6 +11,7 @@
 /*
 TODO
 - seems to stay on all desktops, this is desired
+- Base font size and all fonts scale from that (or multiplier)
 - Don;t make static so would could have multiple instances at once for different locations
   Pass in location name into __Init
 - Hourly air quality data? Wider GUI
@@ -111,34 +112,34 @@ class Weather {
       99, "Thunderstorm"        ;"Thunderstorm, hail"
    )
    Static emoji := map(
-       0, "☀",         ;"Clear",
-       1, "🌤",        ;"Mainly clear",
+       0, "☀️",         ;"Clear",
+       1, "🌤️",        ;"Mainly clear",
        2, "⛅",        ;"Partly cloudy",
-       3, "☁",         ;"Overcast",
-      45, "🌁",        ;"Fog",
+       3, "☁️",         ;"Overcast",
+      45, "🌫️",        ;"Fog",
       48, "🌫️",        ;"Rime fog",
-      51, "🌧️",        ;"Light drizzle",
+      51, "🌦️",        ;"Light drizzle",
       53, "🌧️",        ;"Drizzle",
       55, "☔",       ;"Heavy drizzle",
       56, "🧊",       ;"Freezing drizzle",
       57, "🧊",       ;"Freezing drizzle",
-      61, "🌧️",       ;"Light rain",
-      63, "☔",        ;"Rain",
+      61, "🌦️",       ;"Light rain",
+      63, "🌧️",        ;"Rain",
       65, "☔",        ;"Heavy rain",
       66, "🧊",        ;"Freezing rain",
       67, "🧊",        ;"Freezing rain",
-      71, "🌨",        ;"Light snow",
+      71, "🌨️",        ;"Light snow",
       73, "❄",        ;"Snow",
       75, "⛄",       ;"Heavy snow",
-      77, "❄",        ;"Snow grains",
-      80, "☔",       ;"Light showers",
-      81, "☔",       ;"Showers",
-      82, "🌧",        ;"Heavy showers",
+      77, "🌨️",        ;"Snow grains",
+      80, "🌦️",       ;"Light showers",
+      81, "🌦️",       ;"Showers",
+      82, "⛈️",        ;"Heavy showers",
       85, "❄",        ;"Snow showers",
       86, "⛄",        ;"Heavy snow showers",
       95, "🌩️",        ;"Thunderstorm",
-      96, "🌩️",        ;"Thunderstorm, hail",
-      99, "🌩️"         ;"Thunderstorm, hail"
+      96, "⛈️",        ;"Thunderstorm, hail",
+      99, "⛈️"         ;"Thunderstorm, hail"
    )
    /**
     * Called during program startup
@@ -567,7 +568,6 @@ class Weather {
     * @param json Json text to parse
     */
    static RenderWeather(json) {
-      this.Ctl.loc.Text := this.Name
       cur := this.Section(json, "current")
       day := this.Section(json, "daily")
       hrs := this.Section(json, "hourly")
@@ -586,6 +586,7 @@ class Weather {
                c.SetColors(, bgc)
       }
 
+      this.Ctl.loc.Text := this.Name
       this.Ctl.temp.Text := tf "°"
       wsu := this.mks ? " kmh " : " mph "
       sr := "☀↑  " StrLower(FormatTime(RegExReplace(this.List(day, "sunrise")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
@@ -907,6 +908,7 @@ class LocationManager {
       this.LB        := g.AddListBox("r15")
       this.BtnUp     := g.AddButton("w90 left", "🡅 Move &Up")
       this.BtnDown   := g.AddButton("w90 left", "🡇 Move &Down")
+      this.BtnSelect := g.AddButton("w90 left", "◀ &Select")
       this.BtnRemove := g.AddButton("w90 left", "✂ &Remove")
       this.Edit      := g.AddEdit()
       this.BtnAdd    := g.AddButton("w85 Default", "🡄 &Add")
@@ -915,6 +917,7 @@ class LocationManager {
       this.BtnUp.OnEvent("Click", this.Move.Bind(this, -1))
       this.BtnDown.OnEvent("Click", this.Move.Bind(this, 1))
       this.BtnRemove.OnEvent("Click", this.Remove.Bind(this))
+      this.BtnSelect.OnEvent("Click", this.Select.Bind(this))
       this.BtnAdd.OnEvent("Click", this.Add.Bind(this))
       this.BtnClose.OnEvent("Click", this.Close.Bind(this))
 
@@ -942,7 +945,8 @@ class LocationManager {
       this.LB.Move(m, m, rightX - gap - m, rowY - gap - m)
       this.BtnUp.Move(rightX, m)
       this.BtnDown.Move(rightX, m + (bh + gap))
-      this.BtnRemove.Move(rightX, m + (bh + gap) * 2)
+      this.BtnSelect.Move(rightX, m + (bh + gap) * 2)
+      this.BtnRemove.Move(rightX, m + (bh + gap) * 3)
       this.Edit.Move(m, rowY + (bh - eh) // 2, addX - gap - m)
       this.BtnAdd.Move(addX, rowY)
       this.BtnClose.Move(closeX, rowY)
@@ -1056,6 +1060,12 @@ class LocationManager {
       this.Items.RemoveAt(i)
       this.Save()
       this.RefreshListBox(Min(i, this.Items.Length))
+   }
+   static Select(*) {
+      i := this.LB.Value
+      if !i
+         return
+      Weather.SetLocation(this.Items[i],"","")
    }
 
    static Move(dir, *) {
