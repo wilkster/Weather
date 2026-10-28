@@ -11,20 +11,17 @@
 /*
 TODO
 - seems to stay on all desktops, this is desired
-- Handle DPI Changed, the GUI size needs to reisze and so do D2D fonts.
-  A_ScreenDPI needs replacement, check/fix with D2D disabled first.
-- Base font size and all fonts scale from that (or multiplier)
-- Don;t make static so would could have multiple instances at once for different locations
+- Don't make static so would could have multiple instances at once for different locations
   Pass in location name into __Init
 - Hourly air quality data? Wider GUI
 - https://github.com/Makin-Things/weather-icons (SVG, some are animated)
 */
 
 class Weather {
-   static Lat           := 34.0447
-   static Lon           := -118.2493
-   static CC            := "us"
-   static Name          := "Los Angeles, CA"
+   static Lat           := 0.0
+   static Lon           := 0.0
+   static CC            := ""
+   static Name          := ""
    static Interval      := 30 ; minutes
    /** @type {Gui} */
    static Gui           := ""
@@ -153,49 +150,74 @@ class Weather {
       this.NeedGeo := 1
       this.OnTop := 0
       this.useD2D := 1
-      If (FileExist(this.iniFile)) {
-         ; Set default locations
-         this.Name := IniRead(this.iniFile, A_ComputerName, "Loc", this.Name)
-         If (obj := this.GeocodeName(this.Name)) {
-            this.Lat     := obj.lat
-            this.Lon     := obj.lon
-            this.CC      := obj.CC
-            this.NeedGeo := false
-         }
-         this.Interval        := Integer(IniRead(this.iniFile, A_ComputerName, "Refresh Minutes", 30))
-         this.OnTop           := Integer(IniRead(this.iniFile, A_ComputerName, "OnTop", this.OnTop))
-         this.MKS             := Integer(IniRead(this.iniFile, A_ComputerName, "MKS", this.MKS))
-         this.forecastDays    := Integer(IniRead(this.iniFile, A_ComputerName, "Forecast Days", this.forecastDays))
-         this.hourIncrement   := Integer(IniRead(this.iniFile, A_ComputerName, "Hours Increment", this.hourIncrement))
-         this.maxRows         := Integer(IniRead(this.iniFile, A_ComputerName, "Max Rows", this.maxRows))
-         this.useD2D          := Integer(IniRead(this.iniFile, A_ComputerName, "UseD2D", this.useD2D))
-         this.fontScaleFactor := Number(IniRead(this.iniFile, A_ComputerName, "FontScaling", this.fontScaleFactor))
 
+      ; Set default locations
+      this.Name := IniRead(this.iniFile, A_ComputerName, "Loc", this.Name)
+      If (obj := this.GeocodeName(this.Name)) {
+         this.Lat     := obj.lat
+         this.Lon     := obj.lon
+         this.CC      := obj.CC
+         ; Default was initially used
+         If (this.Name != obj.Place) {
+            IniWrite(obj.Place, this.iniFile, A_ComputerName, "Loc")
+            IniWrite(obj.Place, this.iniFile, "Locations")
+         }
+         this.Name    := obj.Place
+         this.NeedGeo := 0
       } Else {
-         this.NeedGeo := false
-         IniWrite(this.Interval, this.iniFile, A_ComputerName, "Refresh Minutes")
-         IniWrite(this.Name, this.iniFile, A_ComputerName, "Loc")
-         IniWrite(this.Name, this.iniFile, "Locations")
+         if (MsgBox("Failed to set a location for weather, do you want to continue?",,0x4) = "No") 
+            ExitApp()
       }
+      this.Interval        := Integer(IniRead(this.iniFile, A_ComputerName, "Refresh Minutes", 30))
+      this.OnTop           := Integer(IniRead(this.iniFile, A_ComputerName, "OnTop", this.OnTop))
+      this.MKS             := Integer(IniRead(this.iniFile, A_ComputerName, "MKS", this.MKS))
+      this.forecastDays    := Integer(IniRead(this.iniFile, A_ComputerName, "Forecast Days", this.forecastDays))
+      this.hourIncrement   := Integer(IniRead(this.iniFile, A_ComputerName, "Hours Increment", this.hourIncrement))
+      this.maxRows         := Integer(IniRead(this.iniFile, A_ComputerName, "Max Rows", this.maxRows))
+      this.useD2D          := Integer(IniRead(this.iniFile, A_ComputerName, "UseD2D", this.useD2D))
+      this.fontScaleFactor := Number(IniRead(this.iniFile, A_ComputerName, "FontScaling", this.fontScaleFactor))
+
       ; Build the GUI, should be DPI aware, composting helps with flicker
-      if (this.gui)
-         this.gui.Destroy()
+      X := IniRead(this.iniFile, A_ComputerName, "X", 0)
+      Y := IniRead(this.iniFile, A_ComputerName, "Y", 0)
+
+      g := this.BuildGUI(X?, Y?)
+
+      OnMessage(0x201, this.Drag.bind(this))
+      OnMessage(0x232, this.SnapToWorkArea.bind(this))   ; WM_EXITSIZEMOVE
+      OnMessage(0x404, this.TrayMessage.Bind(this))
+      this.cbUpdateData := this.RefreshData.bind(this)
+
+      this.RefreshData()
+      OnExit this.SaveOnExit.bind(this)
+      Sleep(100)
+   }
+   /**
+    * Build/Rebuild the GUI
+    * @returns {unset?} 
+    */
+   Static BuildGUI(X, Y) {
+      If (this.Gui) {
+         if (this.useD2D)
+            D2DText.DisposeAll(this.Gui)
+         this.Gui.Destroy()
+      }
       /** @type {Gui} */
       g := this.Gui := Gui("-Caption +ToolWindow +Border +DPIScale +E0x02000000")
       g.BackColor := "1E1E2E"
-      g.MarginX := 10, g.MarginY := 8
+      g.MarginX := fs(10), g.MarginY := fs(8)
       /*
          y+N is relative to the bottom edge of the previous control.
          yp+N is relative to the top edge (Y position) of the previous control. p = previous
          ym adds a margin
          r8 means 8 rows
       */
-      dw := fs("w260")
+      dw := fs("w265")
       this.Ctl.loc     := this.AddTextCtl(fs("w170"),                  this.Name,    fs("s9")  " cA6ADC8",      "Segoe UI")  ; subtext0
       this.Ctl.temp    := this.AddTextCtl(fs("w78") " y+2 Right",      "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; text
-      this.Ctl.AQI     := this.AddTextCtl(fs("w40") " x+0 yp+12 Right", "---",       fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; text (or by level, below)
-      this.Ctl.AQIlab  := this.AddTextCtl(fs("w30") " x+2 yp+13",      "aqi",        fs("s9")  " cA6ADC8 Norm", "Segoe UI")  ; subtext0
-      this.Ctl.cond    := this.AddTextCtl(dw " xm y+20",               "Loading...", fs("s13") " cB4BEFE Norm", "Segoe UI")  ; lavender
+      this.Ctl.AQI     := this.AddTextCtl(fs("w40") " x+0 Right yp+" fs(12), "---",  fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; text (or by level, below)
+      this.Ctl.AQIlab  := this.AddTextCtl(fs("w30") " x+2 yp+" fs(13),  "aqi",       fs("s9")  " cA6ADC8 Norm", "Segoe UI")  ; subtext0
+      this.Ctl.cond    := this.AddTextCtl(dw " xm y+" fs(20),          "Loading...", fs("s13") " cB4BEFE Norm", "Segoe UI")  ; lavender
       this.Ctl.detail  := this.AddTextCtl(dw " y+8",,                                fs("s11") " cBAC2DE",      "Segoe UI")  ; subtext1, note further spacing uses this font
       If (this.useD2D) {
          this.Ctl.srss   := this.Gui.AddD2DText(dw " y+8", ,                        "Segoe UI", fs(12), "f3f4cd")   ; Direct Write for emojis
@@ -209,27 +231,19 @@ class Weather {
          this.Ctl.daily   := this.AddTextCtl(dw " y+8 r" this.forecastDays+1,,      fs("s10") " cCDD6F4", "Consolas")  ; text
       }
       this.Ctl.updated := this.AddTextCtl(dw " y+8",,                               fs("s8")  " c7F849C", "Segoe UI")  ; overlay1
-      this.Ctl.Icon    := g.AddPicture(fs("H96") " " fs("W96") " " fs("X160") " Y0")      ; Pretty up the window
+      this.ActiveIcon := ""
+      this.Ctl.Icon    := g.AddPicture(fs("H96") " " fs("W96") " " fs("X170") " Y0")      ; Pretty up the window
       this.DropShadow(g.hWnd) ; also border
       this.Round11Corners(g.hWnd, 3) ; use slightly smaller corners, lowdpi less clipping on corners
 
       ; Hand mouse drag/tray click/RMB Menu
-      OnMessage(0x201, this.Drag.bind(this))
-      OnMessage(0x232, this.SnapToWorkArea.bind(this))   ; WM_EXITSIZEMOVE
-      OnMessage(0x404, this.TrayMessage.Bind(this))
       g.OnEvent("ContextMenu", (*) => this.ShowRMB())
-
-      ; Callback for refresh
-      this.cbUpdateData := this.RefreshData.bind(this)
 
       ; Keep on visible monitors, measure first
       g.Show("NoActivate Hide AutoSize")
-      X := IniRead(this.iniFile, A_ComputerName, "X", 0)
-      Y := IniRead(this.iniFile, A_ComputerName, "Y", 0)
       this.gui.opt(this.OnTop ? "+AlwaysOnTop" : "-AlwaysOnTop")
       g.Show("NoActivate x" X " y" Y)
       this.SnapToWorkArea(0, 0, 0, g.Hwnd) ; in case it was off the screen
-      this.RefreshData()
 
       ; in Init, after the controls are created
       this.Ctl.daily.GetPos(,,, &h1)
@@ -237,16 +251,32 @@ class Weather {
       this.rowH1 := h1 // (this.forecastDays + 1)
       this.rowH2 := h2 // (this.maxRows + 1)      
 
-      OnExit this.SaveOnExit.bind(this)
-      Return
-      fs(val) {
+      Return g
+
+      fs(val,r:=1) {
          If IsInteger(val)
-            Return Round(val * this.fontScaleFactor)
+            Return Round(val * this.fontScaleFactor,r)
          Else If IsAlpha(l := SubStr(val, 1, 1)) {
             n := Trim(SubStr(val, 2))
-            Return l . Round(n * this.fontScaleFactor)
+            Return l . Round(n * this.fontScaleFactor,r)
          } Else
             Return ""
+      }
+
+   }
+   /**
+    * Rebuild the GUI, most likely with a new scale factor
+    * @param sf New Scale factor to use
+    * @returns {unset?} 
+    */
+   Static ReBuildGUI(sf?) {
+      If (IsSet(sf)) {
+         If Abs(sf - this.fontScaleFactor) > 0.01 {
+            this.fontScaleFactor := sf
+            this.Gui.GetPos(&X, &Y, &W, &H)
+            this.BuildGUI(X, Y)
+            this.RefreshData()
+         }
       }
    }
    /**
@@ -270,9 +300,9 @@ class Weather {
     * Return the approzimate moon phase unicode symbol
     * @returns Unicode character for moon phase 
     */
-   Static MoonPhase() {
+   Static MoonPhase(deltaDay:=0) {
       p := 29.530588853                                  ; synodic month, days
-      age := Mod(DateDiff(A_NowUTC, "20000106181400", "S") / 86400, p)   ; days since the 2000-01-06 new moon
+      age := Mod(DateDiff(A_NowUTC, "20000106181400", "S") / 86400 + deltaDay, p)   ; days since the 2000-01-06 new moon
       idx := Mod(Floor(age / p * 8 + 0.5), 8)            ; 0 = new, 4 = full
       Return Chr(0x1F311 + idx)                          ; 🌑🌒🌓🌔🌕🌖🌗🌘
    }
@@ -340,6 +370,9 @@ class Weather {
       this.Menu.Add("Display Max Hourly Rows", this.BuildNumMenu("maxRows", "Max Rows", 15))
       this.Menu.Add("Display Hourly Interval", this.BuildNumMenu("hourIncrement", "Hours Increment", 6))
       this.Menu.Add("Refresh Minute Interval", this.BuildNumMenu("Interval", "Refresh Minutes", 12, 5))
+      this.Menu.Add("Display Scale Factor",    this.BuildSFMenu("fontScaleFactor", "FontScaling", 
+      ["0.75", "0.8", "0.9", "0.95", "1", "1.05", "1.1", "1.2", "1.25", "1.5", "1.75", "2.0"]))
+
       ; TODO add one for refresh interval, but need to deal with the math, maybe split 
       this.Menu.Add("Edit Settings File", (*) => Run(this.iniFile))  ; Creates a new menu item.
 
@@ -367,7 +400,20 @@ class Weather {
          this.RefreshData()
       }
    }
-
+   ; Build a menu for the scale factor will callback to set it
+   static BuildSFMenu(prop, iniKey, vals) {
+      sub := Menu()
+      for v in vals {
+         sub.Add(v, Rebuild.bind(v, prop, iniKey))
+         if (v = this.%prop%)
+            sub.Check(v)
+      }
+      return sub
+      Rebuild(sf, prop, iniKey, *) {
+         this.ReBuildGUI(sf)
+         IniWrite(sf, this.iniFile, A_ComputerName, iniKey)
+      }
+   }
    ; Builds a 1-10 submenu for the property named prop, checking the current value
    static BuildNumMenu(prop, iniKey, mx:=10, inc:=1) {
       sub := Menu()
@@ -398,7 +444,7 @@ class Weather {
          this.Lat           := obj.lat
          this.Lon           := obj.lon
          this.CC            := obj.CC
-         this.NeedGeo       := false
+         this.NeedGeo       := 0
          this.name          := place
          IniWrite(place, this.iniFile, A_ComputerName, "Loc")
          IniWrite(this.CC, this.iniFile, place, "CC")
@@ -406,7 +452,7 @@ class Weather {
          IniWrite(this.Lon, this.iniFile, place, "Lon")
          IniWrite(obj.Name, this.iniFile, place, "FullName")
       } Else {
-         this.NeedGeo          := TRUE
+         this.NeedGeo := 1
          this.Ctl.updated.Text := "Location lookup failed for " place
          MsgBox("Failed to get a location for`n" place, "Location Error", 0x30)
       }
@@ -484,7 +530,7 @@ class Weather {
          this.Ctl.updated.Text := "Location lookup failed for " this.Name " - " FormatTime(, "h:mm tt")
          Return false
       }
-      this.Lat := obj.lat, this.Lon := obj.lon, this.CC :=obj.CC, this.NeedGeo := false
+      this.Lat := obj.lat, this.Lon := obj.lon, this.CC :=obj.CC, this.NeedGeo := 0
       Return true
    }
 
@@ -648,11 +694,12 @@ class Weather {
          p  := pops[i]
          w  := winds[i]
          d  := Compass(dirs[i])
-         wc := this.emoji.get(Integer(codes[i]), "🌈")
-         ; out .= daynight(dn) . this.lpad(this.Hour12(hr), 6)
-         ;    . this.lpad(IsNumber(t) ? (Round(t) "°") : "--", 5) . " " . wc
-         ;    . this.lpad(IsNumber(p) ? (p "%") : "--", 5)
-         ;    . "  " . this.lpad(IsNumber(w) ? (Round(w) " mph ") : ("--"), 8) d "`n"
+         wcn := Integer(codes[i])
+         ; TODO - build on this for night time weather if sun is involved
+         if (wcn = 0 and !dn)
+            wc := this.MoonPhase()
+         else
+            wc := this.emoji.get(wcn, "🌈")
          out .=  this.lpad(this.Hour12(hr), 5) . " " . daynight(dn)
             . this.lpad(IsNumber(t) ? (Round(t) "°") : "--", 5) . " " . wc
             . this.lpad(IsNumber(p) ? (p "%") : "--", 5)
@@ -767,11 +814,20 @@ class Weather {
     * @returns {Integer | Object}  n.lat, n.lon, n.name
     */
    Static GeocodeName(place) {
+      If (!place) {
+         default := this.GetLocalPlaceName()
+         res := InputBox("Enter Default Weather Location`nAn estimated location is shown below`nModify as needed", "Weather Locaiton Needed",,default)
+         If (res.Result = "Ok") {
+            place := res.Value
+         } else {
+            return false
+         }
+      }
       ; See if location is cached
       If (lat := IniRead(this.iniFile, place, "Lat", 0)) {
          lon := IniRead(this.iniFile, place, "Lon", 0)
          CC  := IniRead(this.iniFile, place, "CC", "us")
-         return {lat: Round(lat,7), lon: Round(lon,7), name: place, CC: CC}
+         return {place: place, lat: Round(lat,7), lon: Round(lon,7), name: place, CC: CC}
       }
       ; Query location data from openstreetmap
       url := "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&q=" UriEncode(place)
@@ -791,7 +847,7 @@ class Weather {
 
       RegExMatch(txt, '"display_name":"((?:[^"\\]|\\.)*)"', &mName)
       RegExMatch(txt, '"country_code":"([a-z]{2})"', &mCC)
-      return {lat: Round(mLat[1],7), lon: Round(mLon[1],7), name: mName ? mName[1] : place, CC: mCC ? mCC[1] : ""}
+      return {place: place, lat: Round(mLat[1],7), lon: Round(mLon[1],7), name: mName ? mName[1] : place, CC: mCC ? mCC[1] : ""}
       
       UriEncode(s) {
          n := StrPut(s, "UTF-8") - 1
@@ -809,11 +865,32 @@ class Weather {
          return out
       }   
    }
+   /**
+    * Return the closest location of local network
+    * @returns Closest location of network 
+    */
+   Static GetLocalPlaceName() {
+      try {
+         whr := ComObject("WinHttp.WinHttpRequest.5.1")
+         whr.SetTimeouts(5000, 5000, 10000, 10000)
+         whr.Open("GET", "https://ipwho.is/?fields=success,city,region,country", false)
+         whr.Send()
+         txt := whr.ResponseText
+         OutputDebug(txt)
+      } catch
+         Return ""
+      If !InStr(txt, '"success": true')
+         Return ""
+      place := ""
+      For key in ["city", "region", "country"]
+         If RegExMatch(txt, '"' key '":\s*"((?:[^"\\]|\\.)*)"', &m) && m[1] != ""
+            place .= (place = "" ? "" : ", ") m[1]
+      Return place
+   }
    ; Trigger a paint for the D2D elements, shouldn't flash
    ; RDW_INVALIDATE|RDW_ALLCHILDREN|RDW_UPDATENOW
    Static RefresMe() => DllCall("RedrawWindow", "Ptr", Weather.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0001|0x0080|0x0100)
 }
-
 /**
  * On unlock or resume from sleep, refresh immediatly
  */
@@ -895,10 +972,9 @@ class MenuDarkMode {
       DllCall(DllCall("GetProcAddress", "Ptr", hMod, "Ptr", 136, "Ptr"))
    }
 }
-
-
-#Requires AutoHotkey v2.1-alpha.1
-
+/*
+ * Class to manage thw weather widget locations
+*/
 class LocationManager {
    static IniFile := A_ScriptDir "\WeatherWidget.ini"
    static Section := "Locations"
@@ -1094,7 +1170,6 @@ class LocationManager {
       this.Save()
       this.RefreshListBox(j)
    }
-
 }
 
 
