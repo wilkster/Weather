@@ -189,12 +189,3 @@ To produce a standalone `Weather.exe`, compile with Ahk2Exe. The script's `;@Ahk
 | US AQI | `air-quality-api.open-meteo.com` |
 | Place name to coordinates | `nominatim.openstreetmap.org` |
 | Default location estimate (first run only) | `ipwho.is` |
-
----
-
-## Planned / ideas
-
-- Support multiple simultaneous instances, one per location
-- Hourly air quality data and a wider layout
-- Animated SVG weather icons
-- Night-time weather symbols that account for sunrise and sunset
