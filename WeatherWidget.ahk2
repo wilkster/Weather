@@ -11,6 +11,7 @@
 /*
 TODO
 - seems to stay on all desktops, this is desired
+- allow zero days
 - Don't make static so would could have multiple instances at once for different locations
   Pass in location name into __Init
 - Hourly air quality data? Wider GUI
@@ -220,6 +221,7 @@ class Weather {
       this.Ctl.cond    := this.AddTextCtl(dw " xm y+" fs(20),          "Loading...", fs("s13") " cB4BEFE Norm", "Segoe UI")  ; lavender
       this.Ctl.detail  := this.AddTextCtl(dw " y+8",,                                fs("s11") " cBAC2DE",      "Segoe UI")  ; subtext1, note further spacing uses this font
       If (this.useD2D) {
+         this.Gui.SetFont(fs("S14"), "Consolas") ; Impacts spacing, leave a little extra due to emoji heights. I could force spacing but would be too crowded
          this.Ctl.srss   := this.Gui.AddD2DText(dw " y+8", ,                        "Segoe UI", fs(12), "f3f4cd")   ; Direct Write for emojis
          this.Ctl.srss.SetAlign("Center")
          this.Gui.SetFont(fs("S12"), "Consolas") ; Impacts spacing, leave a little extra due to emoji heights. I could force spacing but would be too crowded
@@ -227,8 +229,8 @@ class Weather {
          this.Ctl.daily  := this.Gui.AddD2DText(dw " y+8 r" this.forecastDays + 1,, "Consolas", fs(10), "CDD6F4")   ; Direct Write for emojis
       } Else {
          this.Ctl.srss    := this.AddTextCtl(dw " y+8 Center", ,                    fs("s12") " cf3f4cd", "Segoe UI")
-         this.Ctl.hourly  := this.AddTextCtl(dw " y+8 r" this.maxRows+1,,           fs("s10") " cBAC2DE", "Consolas")  ; subtext1
-         this.Ctl.daily   := this.AddTextCtl(dw " y+8 r" this.forecastDays+1,,      fs("s10") " cCDD6F4", "Consolas")  ; text
+         this.Ctl.hourly  := this.AddTextCtl(dw " y+8 r" this.maxRows + 1,,         fs("s10") " cBAC2DE", "Consolas")  ; subtext1
+         this.Ctl.daily   := this.AddTextCtl(dw " y+8 r" this.forecastDays + 1,,    fs("s10") " cCDD6F4", "Consolas")  ; text
       }
       this.Ctl.updated := this.AddTextCtl(dw " y+8",,                               fs("s8")  " c7F849C", "Segoe UI")  ; overlay1
       this.ActiveIcon := ""
@@ -250,6 +252,9 @@ class Weather {
       this.Ctl.hourly.GetPos(,,, &h2)
       this.rowH1 := h1 // (this.forecastDays + 1)
       this.rowH2 := h2 // (this.maxRows + 1)      
+      ; In case days/maxRows was zerod out, squash the title height
+      if !(this.forecastDays && this.maxRows) 
+         this.ApplyRowCounts()
 
       Return g
 
@@ -287,14 +292,13 @@ class Weather {
       c := this.Ctl
       gap := 8  * this.Dpi() / 96  ; matches your y+8, or measure it once in Init, TODO: May not need to scale
       c.hourly.GetPos(, &hY) ; DPI Scaled
-      hH := this.rowH2 * (this.maxRows + 1)
-      dH := this.rowH1 * (this.forecastDays + 1)
+      hH := this.maxRows ? this.rowH2 * (this.maxRows + 1) : -gap
+      dH := this.forecastDays ? this.rowH1 * (this.forecastDays + 1) : -gap
       dY := hY + hH + gap
       c.hourly.Move(, , , hH) ; adjust height onlu
       c.daily.Move(, dY, , dH) ; height and new Y
       c.updated.Move(, dY + dH + gap) ; new Y only
       this.Gui.Show("NoActivate AutoSize")
-      this.RefreshData()
    }
    /**
     * Return the approzimate moon phase unicode symbol
@@ -354,6 +358,7 @@ class Weather {
       ; This allows duplicate entries or just loc=.......
       If (FileExist(this.iniFile)) {
          this.Menu.Add("Manage Locations", (*) => LocationManager.Show())  ; Creates a new menu item.
+         this.Menu.SetIcon("Manage Locations", A_ScriptDir "\" "Location.Ico")
          this.Menu.Add()
          maxLoc :=IniRead(this.iniFile, "Default", "Max Locations", 50)
          for idx,loc in this.ReadLocations(this.iniFile) {
@@ -366,17 +371,17 @@ class Weather {
       } else
          this.Menu.Add("Refresh now", this.cbUpdateData)
       this.Menu.add()
-      this.Menu.Add("Display Forecast Days",   this.BuildNumMenu("forecastDays", "Forecast Days", 16))
-      this.Menu.Add("Display Max Hourly Rows", this.BuildNumMenu("maxRows", "Max Rows", 15))
+      this.Menu.Add("Display Max Hourly Rows", this.BuildNumMenu("maxRows", "Max Rows", 15,1, 0))
       this.Menu.Add("Display Hourly Interval", this.BuildNumMenu("hourIncrement", "Hours Increment", 6))
-      this.Menu.Add("Refresh Minute Interval", this.BuildNumMenu("Interval", "Refresh Minutes", 12, 5))
+      this.Menu.Add("Display Forecast Days",   this.BuildNumMenu("forecastDays", "Forecast Days", 16,1, 0))
+      this.Menu.Add("Refresh Minute Interval", this.BuildNumMenu("Interval", "Refresh Minutes", 60, 5, 5))
       this.Menu.Add("Display Scale Factor",    this.BuildSFMenu("fontScaleFactor", "FontScaling", 
       ["0.75", "0.8", "0.9", "0.95", "1", "1.05", "1.1", "1.2", "1.25", "1.5", "1.75", "2.0"]))
 
-      ; TODO add one for refresh interval, but need to deal with the math, maybe split 
-      this.Menu.Add("Edit Settings File", (*) => Run(this.iniFile))  ; Creates a new menu item.
-
       this.Menu.Add()
+      this.Menu.Add("Edit Settings File", (*) => Run(this.iniFile))  ; Creates a new menu item.
+      this.Menu.SetIcon("Edit Settings File", A_ScriptDir "\" "Settings.Ico")
+
       mn := "Always On Top"
       this.Menu.Add(mn, ToggleOnTop)  ; Creates a new menu item.
       If (this.OnTop)
@@ -387,8 +392,9 @@ class Weather {
       if (this.mks)
          this.Menu.Check(mn)
 
-
+      this.Menu.Add()
       this.Menu.Add("Exit", (*) => ExitApp())
+      this.Menu.SetIcon("Exit", A_ScriptDir "\" "Exit.Ico")
       ToggleOnTop(*) {
          this.OnTop := !this.OnTop
          IniWrite(this.OnTop, this.iniFile, A_ComputerName, "OnTop")
@@ -415,10 +421,9 @@ class Weather {
       }
    }
    ; Builds a 1-10 submenu for the property named prop, checking the current value
-   static BuildNumMenu(prop, iniKey, mx:=10, inc:=1) {
+   static BuildNumMenu(prop, iniKey, mx:=10, inc:=1, mn := 1) {
       sub := Menu()
-      Loop mx {
-         I := Integer(A_Index * inc)
+      For I in Range(mn, mx, inc) {
          sub.Add(I, this.SetNum.Bind(this, prop, iniKey))
          if (I = this.%prop%)
             sub.Check(I)
@@ -431,6 +436,7 @@ class Weather {
       sub.Check(itemName)
       IniWrite(this.%prop%, this.iniFile, A_ComputerName, iniKey)
       this.ApplyRowCounts()
+      this.RefreshData()
    }
    
    /**
@@ -593,7 +599,7 @@ class Weather {
          . "&current=weather_code,temperature_2m,wind_speed_10m,wind_direction_10m,apparent_temperature,relative_humidity_2m,is_day"
          . "&hourly=weather_code,temperature_2m,precipitation_probability,wind_speed_10m,wind_direction_10m,is_day"
          . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset"
-         . "&temperature_unit=" tu "&wind_speed_unit=" ws "&forecast_days=" this.forecastDays 
+         . "&temperature_unit=" tu "&wind_speed_unit=" ws "&forecast_days=" max(this.forecastDays,1)
          . "&forecast_hours=" this.maxRows * this.hourIncrement + 2 "&timezone=auto"
       Return this.Query(url, this.RenderWeather.Bind(this))
    }
@@ -660,8 +666,10 @@ class Weather {
       ;-----------------------------------------------------------------------
       ; Daily Forecast
       ;-----------------------------------------------------------------------
-      out := "Day  ―――――――Temp―――――  Prec  Wind`n"
+      out := ""
       Loop this.forecastDays {
+         if A_Index == 1
+            out := "Day  ―――――――Temp―――――  Prec  Wind`n"
          i         := A_Index
          hi        := this.lpad(Round(this.List(day, "temperature_2m_max")[i]),4)
          lo        := this.lpad(Round(this.List(day, "temperature_2m_min")[i]),4)
@@ -676,7 +684,6 @@ class Weather {
       ;-----------------------------------------------------------------------
       ; Hourly data starts at the current hour (forecast_hours), not midnight
       ;-----------------------------------------------------------------------
-      out   := "   Time   Temp    Prec    Wind`n"
       times := this.List(hrs, "time")
       temps := this.List(hrs, "temperature_2m")
       pops  := this.List(hrs, "precipitation_probability")
@@ -687,7 +694,10 @@ class Weather {
       RegExMatch(times[1], "T(\d+)", &m)
       h0    := Integer(m[1])      ; clock hour of array element 1
       i     := 2                  ; element 2 = next hour
+      out := ""
       while (A_Index <= this.maxRows && i <= temps.Length) {
+         if A_Index == 1
+            out   := "   Time   Temp    Prec    Wind`n"
          hr := Mod(h0 + i - 1, 24)   ; clock hour for this element
          dn := dns[i]
          t  := temps[i]
@@ -695,7 +705,6 @@ class Weather {
          w  := winds[i]
          d  := Compass(dirs[i])
          wcn := Integer(codes[i])
-         ; TODO - build on this for night time weather if sun is involved
          if (wcn = 0 and !dn)
             wc := this.MoonPhase()
          else
@@ -1171,6 +1180,7 @@ class LocationManager {
       this.RefreshListBox(j)
    }
 }
+Range(Start, Stop, Step := 1) => (&n) => (n := Start, Start += Step, Step > 0 ? n <= Stop : n >= Stop)
 
 
 ; Start things up here
