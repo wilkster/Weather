@@ -2,7 +2,7 @@
 
 A compact, always-available desktop weather widget for Windows, written in AutoHotkey v2.1 (Requires 2.1 Alpha 23 or later). It shows current conditions, air quality, an hourly outlook, and a multi-day forecast in a small borderless window, and mirrors the current conditions in the system tray icon.
 
-![Weather widget screenshot](image.png)
+![alt text](<✂️ 2026-10-28 13˸45˸02 (430x884).PNG>)
 
 No API keys or accounts are needed. Weather and air quality come from [Open-Meteo](https://open-meteo.com/), and place names are resolved with OpenStreetMap [Nominatim](https://nominatim.openstreetmap.org/).
 
@@ -63,7 +63,7 @@ No API keys or accounts are needed. Weather and air quality come from [Open-Mete
 ## Using the widget
 
 | Action | Result |
-|---|---|
+| --- | --- |
 | **Left-click and drag** anywhere on the widget | Move the window (it snaps back onto a monitor on release) |
 | **Right-click** | Open the settings and location menu |
 | **Left-click tray icon** | Show the widget |
@@ -72,7 +72,7 @@ No API keys or accounts are needed. Weather and air quality come from [Open-Mete
 ### Right-click menu
 
 | Item | Description |
-|---|---|
+| --- | --- |
 | **Manage Locations** | Opens the Location Manager (see below) |
 | *Location list* | Your saved locations, in the order they appear in the INI file. Click one to switch. The current location is checked. |
 | **Display Forecast Days** | 1 to 16 days of daily forecast |
@@ -94,7 +94,7 @@ If the INI file does not exist yet, the menu offers **Refresh now** in place of 
 A resizable dialog for maintaining your saved locations:
 
 | Control | Action |
-|---|---|
+| --- | --- |
 | **Move Up / Move Down** | Reorder the selected location (this is the order shown in the right-click menu) |
 | **Select** | Switch the widget to the selected location |
 | **Remove** | Delete the selected location from the list |
@@ -135,7 +135,7 @@ FullName=Denver, Colorado, United States
 ```
 
 | Key | Section | Meaning | Default |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `Loc` | computer name | Currently selected location | Estimated at first run |
 | `Refresh Minutes` | computer name | Minutes between refreshes | 30 |
 | `Forecast Days` | computer name | Days in the daily forecast | 2 |
@@ -173,7 +173,7 @@ At night, the widget first looks for the same name prefixed with `Night ` (e.g. 
 
 ## Running and building
 
-1. Place `WeatherWidget.ahk2`, `DirectWriteClass.ahk2`, and the icon files in one folder.
+1. Place `WeatherWidget.ahk2`, `DirectWriteClass.ahk2`, and the icon files in one folder along with the `ICO` files.
 2. Can run `Weather.exe` directly or `WeatherWidget.ahk2`with AutoHotkey v2.1+
 3. On the first run, if no location is configured, you are prompted for one. An estimate based on your IP address is pre-filled; edit it as needed. That will be the last time your are promted for a location.
 
@@ -184,7 +184,7 @@ To produce a standalone `Weather.exe`, compile with Ahk2Exe. The script's `;@Ahk
 ## Data sources
 
 | Purpose | Service |
-|---|---|
+| --- | --- |
 | Weather forecast | `api.open-meteo.com` |
 | US AQI | `air-quality-api.open-meteo.com` |
 | Place name to coordinates | `nominatim.openstreetmap.org` |
