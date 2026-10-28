@@ -2,7 +2,7 @@
 
 A compact, always-available desktop weather widget for Windows, written in AutoHotkey v2.1 (Requires 2.1 Alpha 23 or later). It shows current conditions, air quality, an hourly outlook, and a multi-day forecast in a small borderless window, and mirrors the current conditions in the system tray icon.
 
-![alt text](image-2.png)
+![alt text](image-3.png)
 
 No API keys or accounts are needed. Weather and air quality come from [Open-Meteo](https://open-meteo.com/), and place names are resolved with OpenStreetMap [Nominatim](https://nominatim.openstreetmap.org/).
 
