@@ -184,9 +184,7 @@ To produce a standalone `Weather.exe`, compile with Ahk2Exe. The script's `;@Ahk
 ## Data sources
 
 | Purpose | Service |
-
 |---|---|
-
 | Weather forecast | `api.open-meteo.com` |
 | US AQI | `air-quality-api.open-meteo.com` |
 | Place name to coordinates | `nominatim.openstreetmap.org` |
