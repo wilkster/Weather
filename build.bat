@@ -6,4 +6,8 @@ timeout /t 1 /nobreak >nul
 
 start /wait "" C:\Apps\AHK\V2\Ahk2Exe.exe /in "WeatherWidget.ahk2" /icon "Partly Cloudy.ico" /base "C:\Apps\AHK\V2\AutoHotkey64.exe" /out "WeatherWidget.exe"
 
+del /q WeatherWidget.zip
+7z a -tzip WeatherWidget.zip WeatherWidget.exe *.ico
+
 if "%WAS_RUNNING%"=="1" start "" "WeatherWidget.exe"
+pause
