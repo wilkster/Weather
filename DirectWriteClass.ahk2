@@ -193,7 +193,21 @@ class D2DText {
       ctrl.D2D := inst           ; keeps the instance alive as long as the control exists
       return inst
    }
+   /** Releases the COM resources and breaks the ctrl <-> instance cycle. Call before destroying the GUI. */
+   Dispose() {
+      this.__Delete()               ; safe to run again later: every pointer is zeroed
+      if this._ctrl {
+         try this._ctrl.D2D := ""
+         this._ctrl := ""
+      }
+   }
 
+   /** Disposes every D2DText control in a GUI. */
+   static DisposeAll(g) {
+      for hwnd, ctrl in g
+         if ctrl.HasProp("D2D")
+            ctrl.D2D.Dispose()
+   }
    /** The Text control this instance draws into. */
    Ctrl => this._ctrl
 
