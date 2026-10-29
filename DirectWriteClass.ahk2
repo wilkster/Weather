@@ -46,11 +46,12 @@ struct D2DT_RECT {
 }
 /**
  * Renders color text (emoji included) into a Text control using Direct2D / DirectWrite.
+ * The background is always transparent: each repaint is filled with the GUI's current BackColor.
  * Create instances with Gui.AddD2DText, which stores the instance on the control (ctrl.D2D),
  * so you only need to keep the return value if you want to call methods on it later.
  * Constructing D2DText directly on your own control requires keeping a reference to it.
  * @example
- * d := myGui.AddD2DText("w400 r7 cA6ADC8 Background1E1E2E", "Hello 😊")
+ * d := myGui.AddD2DText("w400 r7 cA6ADC8", "Hello 😊")
  * d.SetAlign("Center")
  * d.Text := "Updated"
  */
@@ -79,12 +80,11 @@ class D2DText {
     * @param {String} [font="Segoe UI Emoji"] Font family name.
     * @param {Number} [size=10] Font size in points (same unit as AHK's s10 option).
     * @param {Integer|String} [fg=0xFFFFFF] Text color, 0xRRGGBB or a "RRGGBB" hex string.
-    * @param {Integer|String} [bg=""] Background color, 0xRRGGBB or a "RRGGBB" hex string. Blank = the GUI's BackColor.
     * @param {Integer} [weight=400] Font weight (400 = normal, 700 = bold).
     * @param {Number} [pad=0] Padding between control edge and text, in DIPs (1/96 inch).
     * @throws {OSError} If a Direct2D or DirectWrite call fails.
     */
-   __New(ctrl, text := "", font := "Segoe UI Emoji", size := 10, fg := 0xFFFFFF, bg := "", weight := 400, pad := 0) {
+   __New(ctrl, text := "", font := "Segoe UI Emoji", size := 10, fg := 0xFFFFFF, weight := 400, pad := 0) {
       D2DText._Init()
       this._ctrl   := ctrl
       this.sf      := 96 / DllCall("GetDpiForWindow", "Ptr", this._ctrl.Hwnd, "UInt")
@@ -93,7 +93,6 @@ class D2DText {
       this._size   := size
       this._weight := weight || 400      ; 400 = normal; 0 or "" -> normal
       this._fg     := D2DText._ToRGB(fg)
-      this._bg     := D2DText._ToRGB(bg = "" ? D2DText._GuiBack(ctrl.Gui) : bg)
       this._pad    := pad
       this._align  := 0      ; 0 = left, 1 = right, 2 = center
       this._wrap   := true
@@ -105,7 +104,8 @@ class D2DText {
    }
 
    /**
-    * Returns the GUI's BackColor as 0xRRGGBB, or the system dialog color if the GUI has none.
+    * Returns the GUI's current BackColor as 0xRRGGBB, or the system dialog color if the GUI has none.
+    * Read on every paint, which is what makes the control look transparent.
     * @param {Gui} g The GUI.
     * @returns {Integer}
     */
@@ -133,8 +133,8 @@ class D2DText {
 
    /**
     * Creates a Text control and attaches a D2DText renderer to it. Called through Gui.AddD2DText.
+    * The background is always transparent (the GUI's BackColor shows through); a BackgroundXXXXXX option is ignored.
     * Colors are 0xRRGGBB. Anything left blank is taken from the GUI or the options string:
-    *   bg   -> "BackgroundXXXXXX" in options, else the GUI's BackColor, else the system dialog color
     *   fg   -> "cXXXXXX" in options, else the system text color
     *   font/size/weight -> the GUI's current font (read back from the new control)
     * @param {Gui} g The GUI that owns the control.
@@ -143,12 +143,11 @@ class D2DText {
     * @param {String} [font=""] Font family. Blank = GUI's current font.
     * @param {Number|String} [size=""] Size in points. Blank = GUI's current font size.
     * @param {Integer|String} [fg=""] Text color, 0xRRGGBB. Blank = see above.
-    * @param {Integer|String} [bg=""] Background color, 0xRRGGBB. Blank = see above.
     * @param {Integer|String} [weight=""] Font weight (400 = normal, 700 = bold). Blank = GUI's current font weight.
     * @param {Number} [pad=0] Padding in DIPs (1/96 inch).
     * @returns {D2DText} The renderer. The control is available as .Ctrl, and the renderer as ctrl.D2D.
     */
-   static Create(g, options := "", text := "", font := "", size := "", fg := "", bg := "", weight := "", pad := 0) {
+   static Create(g, options := "", text := "", font := "", size := "", fg := "", weight := "", pad := 0) {
       ; The native control is created with the text so r/w auto-sizing works and screen readers still see it.
       ctrl := g.AddText(options, text)
 
@@ -173,14 +172,6 @@ class D2DText {
             weight := 400
       }
 
-      ; Background: option > GUI BackColor > system dialog color
-      if bg = "" {
-         if RegExMatch(options, "i)(?:^|\s)Background([0-9a-f]{6})(?=\s|$)", &m)
-            bg := Integer("0x" m[1])
-         else
-            bg := D2DText._GuiBack(g)
-      }
-
       ; Text color: option > system text color (SetFont colors can't be read back)
       if fg = "" {
          if RegExMatch(options, "i)(?:^|\s)c([0-9a-f]{6})(?=\s|$)", &m)
@@ -189,7 +180,7 @@ class D2DText {
             fg := D2DText._SysColor(8)                           ; COLOR_WINDOWTEXT
       }
 
-      inst := D2DText(ctrl, text, font, size, fg, bg, weight, pad)
+      inst := D2DText(ctrl, text, font, size, fg, weight, pad)
       ctrl.D2D := inst           ; keeps the instance alive as long as the control exists
       return inst
    }
@@ -249,13 +240,11 @@ class D2DText {
    }
 
    /**
-    * Changes the text and/or background color and repaints. Omit an argument to keep its current value.
-    * @param {Integer|String} [fg] Text color, 0xRRGGBB (or a "RRGGBB" hex string).
-    * @param {Integer|String} [bg] Background color, 0xRRGGBB (or a "RRGGBB" hex string).
+    * Changes the text color and repaints.
+    * @param {Integer|String} fg Text color, 0xRRGGBB (or a "RRGGBB" hex string).
     */
-   SetColors(fg?, bg?) {
-      this._fg := IsSet(fg) ? D2DText._ToRGB(fg) : this._fg
-      this._bg := IsSet(bg) ? D2DText._ToRGB(bg) : this._bg
+   SetColor(fg) {
+      this._fg := D2DText._ToRGB(fg)
       if this._brush
          ComCall(8, this._brush, "Ptr", D2DText._Color(this._fg), "Int")   ; ID2D1SolidColorBrush::SetColor (void)
       this.Refresh()
@@ -327,7 +316,7 @@ class D2DText {
             ctrl.D2D.Refresh()
    }
    /**
-    * Paints immediately: clears the background and draws the text. Called from _OnPaint and __New;
+    * Paints immediately: fills with the GUI's BackColor (transparent look) and draws the text. Called from _OnPaint and __New;
     * use Refresh() for everything else. If the device was lost (D2DERR_RECREATE_TARGET),
     * the render target is rebuilt and drawing is retried.
     */
@@ -348,7 +337,7 @@ class D2DText {
       this._retry := 0
 
       ComCall(48, rt, "Int")                                     ; BeginDraw (void)
-      ComCall(47, rt, "Ptr", D2DText._Color(this._bg), "Int")    ; Clear (void)
+      ComCall(47, rt, "Ptr", D2DText._Color(D2DText._GuiBack(this._ctrl.Gui)), "Int")   ; Clear (void) with the GUI's current BackColor
 
       p := this._pad
       rc := D2D1_RECT_F()
@@ -585,10 +574,12 @@ Gui.Prototype.DefineProp("AddD2DText", {Call: (g, args*) => D2DText.Create(g, ar
 
 /*
 Notes:
-- Colors, font, size and weight are captured when the control is created. A later oGui.BackColor or
-  oGui.SetFont call doesn't affect existing D2D controls; use SetColors / SetFont on the instance.
-- Colors given as options (cXXXXXX, BackgroundXXXXXX) must be 6-digit hex. Named colors are not parsed
-  and fall back to the GUI BackColor / system colors; a named BackColor makes AddD2DText throw.
+- The background is always "transparent": every paint is filled with the GUI's current BackColor, so a later
+  oGui.BackColor change is picked up automatically. It does not show through to controls underneath.
+- Text color, font, size and weight are captured when the control is created. A later oGui.SetFont call
+  doesn't affect existing D2D controls; use SetColor / SetFont on the instance.
+- The text color given as an option (cXXXXXX) must be 6-digit hex. Named colors are not parsed and fall
+  back to the system text color; a named GUI BackColor makes AddD2DText throw.
 - AHK can't read back the color set by oGui.SetFont("cXXXXXX"), so pass cXXXXXX in the options or fg.
 - Font weight is read from the GUI font (or pass weight explicitly: 400 normal, 700 bold). Italic is not supported.
 - Pass the family name only in font ("Consolas", not "Consolas bold"); use weight for bold.
@@ -615,9 +606,9 @@ oGui.MarginX := 10, oGui.MarginY := 8
 oGui.SetFont("s10  cA6ADC8", "Consolas")
 tb0 := oGui.AddText("w400 r7 Background1E1E2E",txt)
 
-d1 := oGui.AddD2DText("w400 r7 cA6ADC8 Background1E1E2E", txt)   ; colors from options
+d1 := oGui.AddD2DText("w400 r7 cA6ADC8", txt)                    ; transparent, text color from options
 d1.SetLineHeight()
-d2 := oGui.AddD2DText("w400 r1 cA6ADC8", "☀⛅☁☂☔⛈❄⛄⛈")          ; background = GUI BackColor
+d2 := oGui.AddD2DText("w400 r1 cA6ADC8", "☀⛅☁☂☔⛈❄⛄⛈")          ; also transparent
 
 oGui.Show("AutoSize")
 PruneMemory()
