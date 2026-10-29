@@ -659,7 +659,7 @@ class Weather {
       hi                 := Round(this.List(day, "temperature_2m_max")[1])
       lo                 := Round(this.List(day, "temperature_2m_min")[1])
       this.Ctl.cond.Text := this.Codes.Get(code, "Code " code)
-      this.Ctl.hilo.Text := "H:" hi "° L:" lo "°" ; 45 is hand tuned
+      this.Ctl.hilo.Text := "🡩" hi "° 🡫" lo "°" ; 45 is hand tuned
       cold := this.mks ? 4 : 40, hot := this.mks ? 32 : 90
       this.Ctl.detail.Text := (tf < cold ? "❄ " : tf > hot ? "🌡️ " : "") 
          . "Feels " Round(this.Value(cur, "apparent_temperature")) "°"
@@ -672,7 +672,7 @@ class Weather {
       out := ""
       Loop this.forecastDays {
          if A_Index == 1
-            out := "Day  ―――――――Temp―――――  Prec  Wind`n"
+            out := "Day  ――――――Temp―――――  Prec   Wind`n"
          i         := A_Index
          hi        := this.lpad(Round(this.List(day, "temperature_2m_max")[i]),4)
          lo        := this.lpad(Round(this.List(day, "temperature_2m_min")[i]),4)
@@ -700,7 +700,7 @@ class Weather {
       out := ""
       while (A_Index <= this.maxRows && i <= temps.Length) {
          if A_Index == 1
-            out   := "   Time   Temp    Prec    Wind`n"
+            out   := "   Time   Temp     Prec    Wind`n"
          hr := Mod(h0 + i - 1, 24)   ; clock hour for this element
          dn := dns[i]
          t  := temps[i]
@@ -744,7 +744,7 @@ class Weather {
       static Compass(deg) {
          if (!IsNumber(deg))
             return "?"
-         return ["↓","↙N","↙","↙E","←","↖E","↖","↖S","↑","S↗","↗","W↗","→","W↘","↘","N↘"][Mod(Round(deg / 22.5), 16) + 1]
+         return ["🡓","🡗N","🡗","🡗E","🡐","🡔E","🡔","🡔S","🡑","S🡕","🡕","W🡕","🡒","W🡖","🡖","N🡖"][Mod(Round(deg / 22.5), 16) + 1]
       }
       static daynight(dn) => !IsNumber(dn) ? "?" : dn ? "🌞" : "🌙"
    }
