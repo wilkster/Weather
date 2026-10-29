@@ -214,27 +214,25 @@ class Weather {
          ym adds a margin
          r8 means 8 rows
       */
-      dw := fs("w265")
-      this.Ctl.loc     := this.AddTextCtl(fs("w170"),                  this.Name,    fs("s9")  " cA6ADC8",      "Segoe UI")  ; subtext0
-      this.Ctl.temp    := this.AddTextCtl(fs("w78") " y+2 Right",      "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; text
-      this.Ctl.AQI     := this.AddTextCtl(fs("w40") " x+0 Right yp+" fs(12), "---",  fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; text (or by level, below)
-      this.Ctl.AQIlab  := this.AddTextCtl(fs("w30") " x+2 yp+" fs(13),  "aqi",       fs("s9")  " cA6ADC8 Norm", "Segoe UI")  ; subtext0
-      this.Ctl.cond    := this.AddTextCtl(dw " xm y+" fs(20),          "Loading...", fs("s11") " cCDD6F4 Bold", "Segoe UI")  ; lavender
-      this.Ctl.hilo    := this.AddTextCtl(dw " x-5 yp Right",,                       fs("s11") " cCDD6F4 Norm", "Segoe UI")  ; subtext1, note further spacing uses this font
-      this.Ctl.detail  := this.AddTextCtl(dw " xm y+8",,                             fs("s11") " cc7cfeb Norm", "Segoe UI")  ; subtext1, note further spacing uses this font
+      this.Ctl.loc     := this.AddTextCtl(fs("w170"),                  this.Name,    fs("s9")  " cA6ADC8",      "Segoe UI")  ; Los Angeles
+      this.Ctl.temp    := this.AddTextCtl(fs("w78") " y+2 Right",      "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; 75
+      this.Ctl.AQI     := this.AddTextCtl(fs("w40") " x+0 Right yp+" fs(12), "---",  fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; 34 same row
+      this.Ctl.AQIlab  := this.AddTextCtl(fs("w30") " x+2 yp+" fs(13), "aqi",        fs("s9")  " cA6ADC8 Norm", "Segoe UI")  ; aqi same row
+      this.Ctl.cond    := this.AddTextCtl(fs("w265") " xm y+" fs(20),  "Loading...", fs("s11") " cCDD6F4 Bold", "Segoe UI")  ; Partly Cloudy...
+      this.Ctl.hilo    := this.AddTextCtl("wp x-5 yp Right",,                        fs("s11") " cCDD6F4 Norm", "Segoe UI")  ; H/L temp on right of above
+      this.Ctl.detail  := this.AddTextCtl("wp xm y+8",,                              fs("s11") " cc7cfeb Norm", "Segoe UI")  ; Feels like ...
       If (this.useD2D) {
          this.Gui.SetFont(fs("S14"), "Consolas") ; Impacts spacing, leave a little extra due to emoji heights. I could force spacing but would be too crowded
-         this.Ctl.srss   := this.Gui.AddD2DText(dw " xm y+8", ,                        "Segoe UI", fs(12), "f3f4cd")   ; Direct Write for emojis
-         this.Ctl.srss.SetAlign("Center")
+         this.Ctl.srss   := this.Gui.AddD2DText("wp xm y+8 Center", ,                       "Segoe UI", fs(12), "f3f4cd")   ; Direct Write for emojis
          this.Gui.SetFont(fs("S12"), "Consolas") ; Impacts spacing, leave a little extra due to emoji heights. I could force spacing but would be too crowded
-         this.Ctl.hourly := this.Gui.AddD2DText(dw " y+8 r" this.maxRows + 1,,      "Consolas", fs(10), "CDD6F4")   ; Direct Write for emojis
-         this.Ctl.daily  := this.Gui.AddD2DText(dw " y+8 r" this.forecastDays + 1,, "Consolas", fs(10), "CDD6F4")   ; Direct Write for emojis
+         this.Ctl.hourly := this.Gui.AddD2DText("wp y+8 r" this.maxRows + 1,,        "Consolas", fs(10), "CDD6F4")   ; Direct Write for emojis
+         this.Ctl.daily  := this.Gui.AddD2DText("wp y+8 r" this.forecastDays + 1,,   "Consolas", fs(10), "CDD6F4")   ; Direct Write for emojis
       } Else {
-         this.Ctl.srss    := this.AddTextCtl(dw " y+8 Center", ,                    fs("s12") " cf3f4cd", "Segoe UI")
-         this.Ctl.hourly  := this.AddTextCtl(dw " y+8 r" this.maxRows + 1,,         fs("s10") " cBAC2DE", "Consolas")  ; subtext1
-         this.Ctl.daily   := this.AddTextCtl(dw " y+8 r" this.forecastDays + 1,,    fs("s10") " cCDD6F4", "Consolas")  ; text
+         this.Ctl.srss    := this.AddTextCtl("wp y+8 Center", ,                      fs("s12") " cf3f4cd", "Segoe UI")
+         this.Ctl.hourly  := this.AddTextCtl("wp y+8 r" this.maxRows + 1,,           fs("s10") " cBAC2DE", "Consolas")  ; subtext1
+         this.Ctl.daily   := this.AddTextCtl("wp y+8 r" this.forecastDays + 1,,      fs("s10") " cCDD6F4", "Consolas")  ; text
       }
-      this.Ctl.updated := this.AddTextCtl(dw " y+8",,                               fs("s8")  " c7F849C", "Segoe UI")  ; overlay1
+      this.Ctl.updated := this.AddTextCtl("wp y+8",,                                 fs("s8")  " c7F849C", "Segoe UI")  ; overlay1
       this.ActiveIcon := ""
       this.Ctl.Icon    := g.AddPicture(fs("H96") " " fs("W96") " " fs("X175") " Y0")      ; Pretty up the window
       this.DropShadow(g.hWnd) ; also border
@@ -341,7 +339,7 @@ class Weather {
    Static AddTextCtl(options, default?, fontOpt?, fontName?) {
       if (IsSet(fontOpt) || IsSet(fontName))
          this.gui.SetFont(fontOpt ?? "", fontName ?? "")
-      return this.gui.AddText(options " +BackgroundTrans", default ?? "")
+      return this.gui.AddText(options " BackgroundTrans", default ?? "")
    }
    /**
     * Build/Rebuild/Show the RMB menu
@@ -448,21 +446,25 @@ class Weather {
     * @param MyMenu menu handle
     */
    Static SetLocation(place, ItemPos, MyMenu) {
-      If (obj := this.GeocodeName(place)) {
-         this.Lat           := obj.lat
-         this.Lon           := obj.lon
-         this.CC            := obj.CC
-         this.NeedGeo       := 0
-         this.name          := place
-         IniWrite(place, this.iniFile, A_ComputerName, "Loc")
-         IniWrite(this.CC, this.iniFile, place, "CC")
-         IniWrite(this.Lat, this.iniFile, place, "Lat")
-         IniWrite(this.Lon, this.iniFile, place, "Lon")
-         IniWrite(obj.Name, this.iniFile, place, "FullName")
-      } Else {
-         this.NeedGeo := 1
-         this.Ctl.updated.Text := "Location lookup failed for " place
-         MsgBox("Failed to get a location for`n" place, "Location Error", 0x30)
+      If (place != this.Name) {
+         If (obj := this.GeocodeName(place)) {
+            this.Lat     := obj.lat
+            this.Lon     := obj.lon
+            this.CC      := obj.CC
+            this.Name    := place
+            this.NeedGeo := 0
+            IniWrite(place, this.iniFile, A_ComputerName, "Loc")
+            If (!obj.cached) {
+               IniWrite(this.CC, this.iniFile, place, "CC")
+               IniWrite(this.Lat, this.iniFile, place, "Lat")
+               IniWrite(this.Lon, this.iniFile, place, "Lon")
+               IniWrite(obj.Name, this.iniFile, place, "FullName")
+            }
+         } Else {
+            this.NeedGeo := 1
+            this.Ctl.updated.Text := "Location lookup failed for " place
+            MsgBox("Failed to get a location for`n" place, "Location Error", 0x30)
+         }
       }
       ; User may have changed these by hand
       this.Interval      := Integer(IniRead(this.iniFile, A_ComputerName, "Refresh Minutes", 30))
@@ -523,6 +525,7 @@ class Weather {
    Static RefreshData(*) {
       ok := this.UpdateWeather()
       ok := this.UpdateAirQuality() && ok
+      WinRedraw(this.Gui) ; for the transparent controls
       SetTimer(this.cbUpdateData, ok ? this.Interval * 60000 : -60000)
       this.PruneMemory()
       OutputDebug("WeatherWidget: Updated Weather and Air Quality for " this.name)
@@ -843,7 +846,7 @@ class Weather {
       If (lat := IniRead(this.iniFile, place, "Lat", 0)) {
          lon := IniRead(this.iniFile, place, "Lon", 0)
          CC  := IniRead(this.iniFile, place, "CC", "us")
-         return {place: place, lat: Round(lat,7), lon: Round(lon,7), name: place, CC: CC}
+         return {place: place, lat: Round(lat,7), lon: Round(lon,7), name: place, CC: CC, cached:1}
       }
       ; Query location data from openstreetmap
       url := "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&q=" UriEncode(place)
@@ -863,7 +866,7 @@ class Weather {
 
       RegExMatch(txt, '"display_name":"((?:[^"\\]|\\.)*)"', &mName)
       RegExMatch(txt, '"country_code":"([a-z]{2})"', &mCC)
-      return {place: place, lat: Round(mLat[1],7), lon: Round(mLon[1],7), name: mName ? mName[1] : place, CC: mCC ? mCC[1] : ""}
+      return {place: place, lat: Round(mLat[1],7), lon: Round(mLon[1],7), name: mName ? mName[1] : place, CC: mCC ? mCC[1] : "", cached:0}
       
       UriEncode(s) {
          n := StrPut(s, "UTF-8") - 1
