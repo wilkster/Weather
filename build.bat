@@ -4,10 +4,10 @@ taskkill /f /im WeatherWidget.exe >nul 2>&1
 if not errorlevel 1 set "WAS_RUNNING=1"
 timeout /t 1 /nobreak >nul
 
-start /wait "" C:\Apps\AHK\V2\Ahk2Exe.exe /in "WeatherWidget.ahk2" /icon "Partly Cloudy.ico" /base "C:\Apps\AHK\V2\AutoHotkey64.exe" /out "WeatherWidget.exe"
+start /wait "" C:\Apps\AHK\V2\Ahk2Exe.exe /in "WeatherWidget.ahk2" /icon Assets/"Partly Cloudy.ico" /base "C:\Apps\AHK\V2\AutoHotkey64.exe" /out "WeatherWidget.exe"
 
 del /q WeatherWidget.zip
-7z a -tzip WeatherWidget.zip WeatherWidget.exe *.ico
+7z a -tzip WeatherWidget.zip WeatherWidget.exe Assets/*.ico
 
 if "%WAS_RUNNING%"=="1" start "" "WeatherWidget.exe"
 pause
