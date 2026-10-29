@@ -214,31 +214,34 @@ class Weather {
          ym adds a margin
          r8 means 8 rows
       */
-      this.Ctl.loc     := this.AddTextCtl(fs("w265"),                  this.Name,    fs("s9")  " cA6ADC8",      "Segoe UI")  ; Los Angeles
+      this.Ctl.loc     := this.AddTextCtl(fs("w265"),                    this.Name,    fs("s9")  " cA6ADC8",      "Segoe UI")  ; Los Angeles
 
-      this.Ctl.temp    := this.AddTextCtl(fs("w78") " y+2 Right",      "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; 75
-      this.Ctl.AQI     := this.AddTextCtl(fs("w40") " x+0 Right yp+" fs(12), "---",  fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; 34 same row
-      this.Ctl.AQIlab  := this.AddTextCtl(fs("w30") " x+2 yp+" fs(13), "aqi",        fs("s9")  " cA6ADC8 Norm", "Segoe UI")  ; aqi same row
+      this.Ctl.temp    := this.AddTextCtl(fs("w78 y+2") " Right",        "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; 75
+      this.Ctl.AQI     := this.AddTextCtl(fs("w40 x+0 yp+12") " Right",  "---",        fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; 34 same row
+      this.Ctl.AQIlab  := this.AddTextCtl(fs("w30 x+2 yp+13"),           "aqi",        fs("s9")  " cA6ADC8 Norm", "Segoe UI")  ; aqi same row
 
-      this.Ctl.hilo    := this.AddTextCtl(fs("w265") " xm y+" fs(20),  "Loading...", fs("s11") " cCDD6F4 Norm", "Segoe UI")  ; H/L temp
-      this.Ctl.cond    := this.AddTextCtl("wp x0 yp Right",,                        fs("s11")  " cCDD6F4 Bold", "Segoe UI")  ; Partly Cloudy on right
+      this.Ctl.hilo    := this.AddTextCtl(fs("w265 xm y+20"),            "Loading...", fs("s11") " cCDD6F4 Norm", "Segoe UI")  ; H/L temp
+      this.Ctl.cond    := this.AddTextCtl("wp xp yp Right",,                           fs("s11") " cCDD6F4 Bold", "Segoe UI")  ; Partly Cloudy on right
 
-      this.Ctl.detail  := this.AddTextCtl("wp xm y+8",,                              fs("s11") " cc7cfeb Norm", "Segoe UI")  ; Feels like ...
+      this.Ctl.detail  := this.AddTextCtl(fs("wp xm y+8"),,                            fs("s11") " cc7cfeb Norm", "Segoe UI")  ; Feels like ...
 
       If (this.useD2D) {
-         this.Gui.SetFont(fs("S14"), "Consolas") ; Impacts spacing, leave a little extra due to emoji heights. I could force spacing but would be too crowded
-         this.Ctl.srss   := this.Gui.AddD2DText("wp xm y+8 Center", ,                "Segoe UI", fs(12), "f3f4cd")   ; Direct Write for emojis
-         this.Gui.SetFont(fs("S12"), "Consolas") ; Impacts spacing, leave a little extra due to emoji heights. I could force spacing but would be too crowded
-         this.Ctl.hourly := this.Gui.AddD2DText("wp y+8 r" this.maxRows + 1,,        "Consolas", fs(10), "CDD6F4")   ; Direct Write for emojis
-         this.Ctl.daily  := this.Gui.AddD2DText("wp y+8 r" this.forecastDays + 1,,   "Consolas", fs(10), "CDD6F4")   ; Direct Write for emojis
+         this.Gui.SetFont(fs("S14"), "Consolas")
+         this.Ctl.srss   := this.Gui.AddD2DText(fs("w200 xm y+8"), ,                   "Segoe UI", fs(12), "f3f4cd")   ; Sunrise/Sunset
+         this.Gui.SetFont(fs("S22"), "Consolas")
+         this.Ctl.moon   := this.Gui.AddD2DText(fs("w50 x+8 yp-6 Right"), ,            "Segoe UI", fs(20), "f3f4cd")   ; Moon phase, larger
+         this.Gui.SetFont(fs("S12"), "Consolas")
+         this.Ctl.hourly := this.Gui.AddD2DText(fs("w265 xm y+8") " r" (this.maxRows + 1),,"Consolas", fs(10), "CDD6F4")   ; Direct Write for emojis
+         this.Ctl.daily  := this.Gui.AddD2DText(fs("wp y+8") " r" (this.forecastDays + 1),,"Consolas", fs(10), "CDD6F4")   ; Direct Write for emojis
       } Else {
-         this.Ctl.srss    := this.AddTextCtl("wp y+8 Center", ,                      fs("s12") " cf3f4cd", "Segoe UI")
-         this.Ctl.hourly  := this.AddTextCtl("wp y+8 r" this.maxRows + 1,,           fs("s10") " cBAC2DE", "Consolas")  ; subtext1
-         this.Ctl.daily   := this.AddTextCtl("wp y+8 r" this.forecastDays + 1,,      fs("s10") " cCDD6F4", "Consolas")  ; text
+         this.Ctl.srss    := this.AddTextCtl(fs("w200 y+8") " Center", ,                fs("s12") " cf3f4cd", "Segoe UI")
+         this.Ctl.moon    := this.AddTextCtl(fs("w50 x+8 yp-6"), ,                      fs("S20") " cf3f4cd", "Segoe UI")
+         this.Ctl.hourly  := this.AddTextCtl(fs("w265 xm y+8") " r" (this.maxRows + 1),,fs("s10") " cBAC2DE", "Consolas")  ; subtext1
+         this.Ctl.daily   := this.AddTextCtl(fs("wp y+8") " r" (this.forecastDays + 1),,fs("s10") " cCDD6F4", "Consolas")  ; text
       }
-      this.Ctl.updated := this.AddTextCtl("wp y+8",,                                 fs("s8")  " c7F849C", "Segoe UI")  ; overlay1
+      this.Ctl.updated := this.AddTextCtl(fs("wp y+8"),,                                fs("s8")  " c7F849C", "Segoe UI")  ; overlay1
       this.ActiveIcon := ""
-      this.Ctl.Icon    := g.AddPicture(fs("H96") " " fs("W96") " " fs("X175") " Y0")      ; Pretty up the window
+      this.Ctl.Icon    := g.AddPicture(fs("H96 W96 X175 Y0"))      ; Pretty up the window
       this.DropShadow(g.hWnd) ; also border
       this.Round11Corners(g.hWnd, 3) ; use slightly smaller corners, lowdpi less clipping on corners
 
@@ -262,15 +265,20 @@ class Weather {
 
       Return g
 
-      fs(val,r:=1) {
-         If IsInteger(val)
-            Return Round(val * this.fontScaleFactor,r)
-         Else If IsAlpha(l := SubStr(val, 1, 1)) {
-            n := Trim(SubStr(val, 2))
-            Return l . Round(n * this.fontScaleFactor,r)
-         } Else
-            Return ""
+   fs(val, r := 1) {
+      k := this.fontScaleFactor
+      if IsNumber(val)
+         return Round(val * k, r)
+      out := ""
+      for tok in StrSplit(Trim(val), [" ", "`t"]) {
+         if tok = ""
+            continue
+         if RegExMatch(tok, "i)^([xywh][msp]?[+-]?|s)(\d+(?:\.\d+)?)$", &m)
+            tok := m[1] Round(m[2] * k, m[1] = "s" ? r : 0)
+         out .= (out = "" ? "" : " ") tok
       }
+      return out
+   }
 
    }
    /**
@@ -662,7 +670,8 @@ class Weather {
       wsu                := this.mks ? " kmh " : " mph "
       sr                 := "☀↑  " StrLower(FormatTime(RegExReplace(this.List(day, "sunrise")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
       ss                 := "🌙↓  " StrLower(FormatTime(RegExReplace(this.List(day, "sunset")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
-      this.Ctl.srss.Text := sr . "  " ss . "       " this.MoonPhase()
+      this.Ctl.srss.Text := sr . "  " ss ; . "       " this.MoonPhase()
+      this.Ctl.moon.Text := this.MoonPhase()
       hi                 := Round(this.List(day, "temperature_2m_max")[1])
       lo                 := Round(this.List(day, "temperature_2m_min")[1])
       this.Ctl.cond.Text := this.Codes.Get(code, "Code " code)

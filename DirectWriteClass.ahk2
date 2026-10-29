@@ -181,8 +181,15 @@ class D2DText {
       }
 
       inst := D2DText(ctrl, text, font, size, fg, weight, pad)
+      inst := D2DText(ctrl, text, font, size, fg, weight, pad)
       ctrl.D2D := inst           ; keeps the instance alive as long as the control exists
-      return inst
+
+      ; Alignment: AddText applies Left/Center/Right to the native control, but D2D draws the text itself
+      if RegExMatch(options, "i)(?:^|\s)(center|right)(?=\s|$)", &a) {
+         inst._align := a[1] = "Center" ? 2 : 1          ; 0 left, 1 right, 2 center
+         ComCall(3, inst._fmt, "Int", inst._align)       ; SetTextAlignment
+      }     
+      return inst      
    }
    /** Releases the COM resources and breaks the ctrl <-> instance cycle. Call before destroying the GUI. */
    Dispose() {
