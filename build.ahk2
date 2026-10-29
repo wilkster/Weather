@@ -13,7 +13,7 @@ if (pid := ProcessExist(exe)) {
       ProcessClose(pid)                             ; fall back to force kill
 }
 
-RunWait('"C:\Apps\AHK\V2\Ahk2Exe.exe" /in "WeatherWidget.ahk2" /icon "Partly Cloudy.ico" /base "C:\Apps\AHK\V2\AutoHotkey64.exe" /out "' exe '"')
+RunWait('"C:\Apps\AHK\V2\Ahk2Exe.exe" /in "WeatherWidget.ahk2" /icon "Assets/Partly Cloudy.ico" /base "C:\Apps\AHK\V2\AutoHotkey64.exe" /out "' exe '"')
 Sleep(200)
 if wasRunning
    Run(exe)
