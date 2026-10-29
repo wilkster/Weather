@@ -11,10 +11,10 @@
 /*
 TODO
 - seems to stay on all desktops, this is desired
-- Allow editing of place name
 - Don't make static so would could have multiple instances at once for different locations
   Pass in location name into __Init
 - Hourly air quality data? Wider GUI
+- Consider differnt layouts like MAC OS weather widget
 - https://github.com/Makin-Things/weather-icons (SVG, some are animated)
 */
 
@@ -53,34 +53,34 @@ class Weather {
 
    */
    static Codes    := Map(
-      0,  "Clear",
-      1,  "Mainly clear",
-      2,  "Partly cloudy",
-      3,  "Overcast",
-      45, "Fog",
-      48, "Rime fog",
-      51, "Light drizzle",
-      53, "Drizzle",
-      55, "Heavy drizzle",
+      0,  "Clear                     ",
+      1,  "Mainly clear             ",
+      2,  "Partly cloudy            ",
+      3,  "Overcast                  ",
+      45, "Fog                        ",
+      48, "Rime fog                  ",
+      51, "Light drizzle            ",
+      53, "Drizzle                   ",
+      55, "Heavy drizzle            ",
       56, "Light Freezing drizzle",
       57, "Dense Freezing drizzle",
-      61, "Light rain",
-      63, "Rain",
-      65, "Heavy rain",
-      66, "Light Freezing rain",
-      67, "Heavy Freezing rain",
-      71, "Light snow",
-      73, "Snow",
-      75, "Heavy snow",
-      77, "Snow grains",
-      80, "Light showers",
-      81, "Showers",
-      82, "Heavy showers",
-      85, "Snow showers",
-      86, "Heavy snow showers",
-      95, "Thunderstorm",
-      96, "Thunderstorm, hail",
-      99, "Intense Thunderstorm, hail"
+      61, "Light rain              ",
+      63, "Rain                     ",
+      65, "Heavy rain              ",
+      66, "Light Freezing rain  ",
+      67, "Heavy Freezing rain  ",
+      71, "Light snow            ",
+      73, "Snow                    ",
+      75, "Heavy snow            ",
+      77, "Snow grains           ",
+      80, "Light showers         ",
+      81, "Showers                ",
+      82, "Heavy showers         ",
+      85, "Snow showers          ",
+      86, "Heavy snow showers   ",
+      95, "Thunderstorm          ",
+      96, "Thunderstorm, hail   ",
+      99, "Heavy Thunderstorm, hail"
    )
    Static Icons := Map(
       0, "Clear",               ;"Clear",
@@ -218,8 +218,8 @@ class Weather {
       this.Ctl.temp    := this.AddTextCtl(fs("w78") " y+2 Right",      "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; text
       this.Ctl.AQI     := this.AddTextCtl(fs("w40") " x+0 Right yp+" fs(12), "---",  fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; text (or by level, below)
       this.Ctl.AQIlab  := this.AddTextCtl(fs("w30") " x+2 yp+" fs(13),  "aqi",       fs("s9")  " cA6ADC8 Norm", "Segoe UI")  ; subtext0
-      this.Ctl.cond    := this.AddTextCtl(dw " xm y+" fs(20),          "Loading...", fs("s13") " cB4BEFE Norm", "Segoe UI")  ; lavender
-      this.Ctl.detail  := this.AddTextCtl(dw " y+8",,                                fs("s11") " cBAC2DE",      "Segoe UI")  ; subtext1, note further spacing uses this font
+      this.Ctl.cond    := this.AddTextCtl(dw " xm y+" fs(20),          "Loading...", fs("s11") " cCDD6F4 Norm", "Segoe UI")  ; lavender
+      this.Ctl.detail  := this.AddTextCtl(dw " xm y+8",,                             fs("s11") " cc7cfeb Norm", "Segoe UI")  ; subtext1, note further spacing uses this font
       If (this.useD2D) {
          this.Gui.SetFont(fs("S14"), "Consolas") ; Impacts spacing, leave a little extra due to emoji heights. I could force spacing but would be too crowded
          this.Ctl.srss   := this.Gui.AddD2DText(dw " y+8", ,                        "Segoe UI", fs(12), "f3f4cd")   ; Direct Write for emojis
@@ -234,7 +234,7 @@ class Weather {
       }
       this.Ctl.updated := this.AddTextCtl(dw " y+8",,                               fs("s8")  " c7F849C", "Segoe UI")  ; overlay1
       this.ActiveIcon := ""
-      this.Ctl.Icon    := g.AddPicture(fs("H96") " " fs("W96") " " fs("X170") " Y0")      ; Pretty up the window
+      this.Ctl.Icon    := g.AddPicture(fs("H96") " " fs("W96") " " fs("X175") " Y0")      ; Pretty up the window
       this.DropShadow(g.hWnd) ; also border
       this.Round11Corners(g.hWnd, 3) ; use slightly smaller corners, lowdpi less clipping on corners
 
@@ -651,15 +651,19 @@ class Weather {
                c.SetColors(, bgc)
       }
 
-      this.Ctl.loc.Text := this.Name
+      this.Ctl.loc.Text  := this.Name
       this.Ctl.temp.Text := tf "°"
-      wsu := this.mks ? " kmh " : " mph "
-      sr := "☀↑  " StrLower(FormatTime(RegExReplace(this.List(day, "sunrise")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
-      ss := "🌙↓  " StrLower(FormatTime(RegExReplace(this.List(day, "sunset")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
+      wsu                := this.mks ? " kmh " : " mph "
+      sr                 := "☀↑  " StrLower(FormatTime(RegExReplace(this.List(day, "sunrise")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
+      ss                 := "🌙↓  " StrLower(FormatTime(RegExReplace(this.List(day, "sunset")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
       this.Ctl.srss.Text := sr . "  " ss . "       " this.MoonPhase()
-      this.Ctl.cond.Text := this.Codes.Get(code, "Code " code) ; . sr " " ss
+      hi                 := Round(this.List(day, "temperature_2m_max")[1])
+      lo                 := Round(this.List(day, "temperature_2m_min")[1])
+      cct                := this.Codes.Get(code, "Code " code)
+      this.Ctl.cond.Text := this.FormatLR(cct, ("H:" hi "° L:" lo "°"), 30) ; 45 is hand tuned
       cold := this.mks ? 4 : 40, hot := this.mks ? 32 : 90
-      this.Ctl.detail.Text := (tf < cold ? "❄ " : tf > hot ? "🌡️ " : "") . "Feels " Round(this.Value(cur, "apparent_temperature")) "°"
+      this.Ctl.detail.Text := (tf < cold ? "❄ " : tf > hot ? "🌡️ " : "") 
+         . "Feels " Round(this.Value(cur, "apparent_temperature")) "°"
          . "   Hum " Round(this.Value(cur, "relative_humidity_2m")) "%"
          . "   Wind " Round(this.Value(cur, "wind_speed_10m")) . wsu . d
       ; Today
@@ -752,6 +756,10 @@ class Weather {
    static Hour12(h)           => ((h := Mod(h, 24)) = 0 ? 12 : h > 12 ? h - 12 : h) (h < 12 ? " AM" : " PM")
    static lpad(s, n)          => Format("{:" n "}", s)
    static rpad(s, n)          => Format("{:-" n "}", s)
+   Static FormatLR(left, right, total := 80) {
+      pad := Max(total - StrLen(left), StrLen(right))
+      Return Format("{1}{2:" pad "s}", left, right)
+   }
    ;----------------------------------------------------------------------------
    ; Round the corners of the GUI for windows 11, ignored on Windows 10
    ; Also draws a rounded border
@@ -899,6 +907,18 @@ class Weather {
    ; Trigger a paint for the D2D elements, shouldn't flash
    ; RDW_INVALIDATE|RDW_ALLCHILDREN|RDW_UPDATENOW
    Static RefresMe() => DllCall("RedrawWindow", "Ptr", Weather.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0001|0x0080|0x0100)
+
+   /**
+    * Update the active location name if it was renamed
+    * @param newName New location name to use
+    * @returns {unset?} 
+    */
+   Static ChangeLocationName(newName) {
+      If this.Name != newName {
+         this.Name := newName
+         this.Ctl.loc.Text := newName
+      }
+   }
 }
 /**
  * On unlock or resume from sleep, refresh immediatly
@@ -1024,6 +1044,7 @@ class LocationManager {
       this.BtnDown   := g.AddButton("w90 left", "🡇 Move &Down")
       this.BtnSelect := g.AddButton("w90 left", "◀ &Select")
       this.BtnRemove := g.AddButton("w90 left", "✂ &Remove")
+      this.BtnRename := g.AddButton("w90 left", "✎ Re&name")      
       this.Edit      := g.AddEdit()
       this.BtnAdd    := g.AddButton("w85 Default", "🡄 &Add")
       this.BtnClose  := g.AddButton("w85", "&Close")
@@ -1031,6 +1052,7 @@ class LocationManager {
       this.BtnUp.OnEvent("Click", this.Move.Bind(this, -1))
       this.BtnDown.OnEvent("Click", this.Move.Bind(this, 1))
       this.BtnRemove.OnEvent("Click", this.Remove.Bind(this))
+      this.BtnRename.OnEvent("Click", this.Rename.Bind(this))
       this.BtnSelect.OnEvent("Click", this.Select.Bind(this))
       this.BtnAdd.OnEvent("Click", this.Add.Bind(this))
       this.BtnClose.OnEvent("Click", this.Close.Bind(this))
@@ -1061,6 +1083,7 @@ class LocationManager {
       this.BtnDown.Move(rightX, m + (bh + gap))
       this.BtnSelect.Move(rightX, m + (bh + gap) * 2)
       this.BtnRemove.Move(rightX, m + (bh + gap) * 3)
+      this.BtnRename.Move(rightX, m + (bh + gap) * 4)
       this.Edit.Move(m, rowY + (bh - eh) // 2, addX - gap - m)
       this.BtnAdd.Move(addX, rowY)
       this.BtnClose.Move(closeX, rowY)
@@ -1181,7 +1204,47 @@ class LocationManager {
          return
       Weather.SetLocation(this.Items[i],"","")
    }
-
+   static Rename(*) {
+      i := this.LB.Value
+      if !i
+         return
+      this.Gui.Opt("+OwnDialogs")
+      oldName := this.Items[i]
+      ib := InputBox("New name for this location:", "Rename Location", "w320 h110", oldName)
+      if ib.Result != "OK"
+         return
+      newName := Trim(ib.Value)
+      if newName = "" || newName == oldName
+         return
+      for j, item in this.Items {
+         if j != i && item = newName {   ; case-insensitive duplicate check
+            MsgBox("Already in the list.", "Duplicate", "Icon!")
+            return
+         }
+      }
+      ; Rename all locations in the INI File
+      out := ""
+      section := ""
+      for line in StrSplit(this.ReadText(&enc), "`n", "`r") {
+         t := Trim(line)
+         if RegExMatch(t, "^\[([^\]]+)\]$", &m) {
+            section := m[1]
+            if section = oldName               ; location's own section
+               line := "[" newName "]"
+         }
+         else if section = this.Section && t = oldName   ; entry in the Locations list
+            line := newName
+         else if RegExMatch(line, "i)^(\s*Loc\s*=\s*)(.*?)\s*$", &m) && m[2] = oldName
+            line := m[1] newName               ; Loc=<oldname> in any section
+         out .= (A_Index = 1 ? "" : "`r`n") line
+      }
+      f := FileOpen(this.IniFile, "w", enc)
+      f.Write(out)
+      f.Close()
+      this.Items[i] := newName
+      Weather.ChangeLocationName(newName)
+      this.RefreshListBox(i)
+   }
    static Move(dir, *) {
       i := this.LB.Value
       j := i + dir
