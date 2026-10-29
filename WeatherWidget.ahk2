@@ -11,7 +11,7 @@
 /*
 TODO
 - seems to stay on all desktops, this is desired
-- allow zero days
+- Allow editing of place name
 - Don't make static so would could have multiple instances at once for different locations
   Pass in location name into __Init
 - Hourly air quality data? Wider GUI
@@ -678,7 +678,7 @@ class Weather {
          fDate     := Trim(StrReplace(this.List(day, "time")[i],'-'),'"')
          dayOfWeek := this.rpad(FormatTime(fDate, "ddd"),3)
          wc        := this.emoji.get(Integer(this.List(day, "weather_code")[i]), "🌈")
-         out       .= dayOfWeek " " lo "° to " hi "° " wc (IsNumber(pop) ? this.lpad(pop,4) : "--") "%" this.lpad(ws,4) wsu "`n"
+         out       .= dayOfWeek " " lo "° to" hi "° " wc (IsNumber(pop) ? this.lpad(pop,4) : "--") "%" this.lpad(ws,4) wsu "`n"
       }
       this.Ctl.daily.Text := RTrim(out)
       ;-----------------------------------------------------------------------
@@ -795,7 +795,7 @@ class Weather {
             If (GetKeyState("Ctrl", "P"))
                this.Gui.hide()
             else
-               this.Gui.show()
+               this.Gui.show(), this.RefresMe()
          Case 0x203:   ; user double left-clicked tray icon
          Case 0x204:   ; user right-clicked tray icon
          Case 0x208:   ; user middle-clicked tray icon
@@ -909,6 +909,7 @@ SetupEventMonitoring() {
    Static WM_WTSSESSION_CHANGE := 0x2B1
    ; Registers to receive notification when the system is suspended or resumed
    Static hwndNotification := 0
+   Static hDisplay := 0
    hwndNotification := DllCall("RegisterSuspendResumeNotification", "Ptr", A_ScriptHwnd, "UInt", 0, "Ptr")
    ; Registers the specified window to receive session change notifications
    ; DllCall("Wtsapi32.dll\WTSRegisterSessionNotification", "ptr", A_ScriptHwnd, "uint", 1)
@@ -917,7 +918,9 @@ SetupEventMonitoring() {
    OnMessage(WM_POWERBROADCAST, cbPowerChangeEvent)
    OnMessage(WM_WTSSESSION_CHANGE, cbSessionChange)
    OnMessage(WM_DISPLAYCHANGE, cbDisplayChange)   ; WM_DISPLAYCHANGE
-
+   ; GUID_CONSOLE_DISPLAY_STATE
+   DllCall("ole32\CLSIDFromString", "Str", "{6FE69556-704A-47A0-8F24-C28D936FDA47}", "Ptr", guid := Buffer(16))
+   hDisplay := DllCall("RegisterPowerSettingNotification", "Ptr", A_ScriptHwnd, "Ptr", guid, "UInt", 0, "Ptr")   ; DEVICE_NOTIFY_WINDOW_HANDLE
    /*==============================================================================
    Suspend resume messages, 7 means the user also initiated it vs system background
    AHK2 WM_BROADCAST:18, lparam=0, msg=536 PBT_APMRESUMEAUTOMATIC
@@ -940,13 +943,22 @@ SetupEventMonitoring() {
    ; Resume from sleep
    cbPowerChangeEvent(wParam, lParam, Msg, hWnd) {
       Static PBT_APMRESUMESUSPEND := 0x7, PBT_APMRESUMEAUTOMATIC := 0x12
+      Static PBT_POWERSETTINGCHANGE := 0x8013
       Switch wParam {
-         Case PBT_APMRESUMESUSPEND, PBT_APMRESUMEAUTOMATIC :
+         Case PBT_APMRESUMESUSPEND, PBT_APMRESUMEAUTOMATIC:
             Weather.RefresMe()
             ; D2DText.RefreshAll(Weather.Gui)
             SetTimer(Weather.cbUpdateData, -10000)
             OutputDebug("WeatherWidget: Resume from Suspension")
-         Default :
+         Case PBT_POWERSETTINGCHANGE:
+            ; POWERBROADCAST_SETTING: GUID (16) + DataLength (4) + Data
+            ; Data: 0 = off, 1 = on, 2 = dimmed
+            If (NumGet(lParam, 20, "UChar") = 1) {
+               Weather.RefresMe()
+               SetTimer(Weather.cbUpdateData, -5000)
+            }
+
+         Default:
       }
    }
    /**
@@ -971,6 +983,8 @@ SetupEventMonitoring() {
       DllCall("Wtsapi32.dll\WTSUnRegisterSessionNotification", "ptr", A_ScriptHwnd)
       If (hwndNotification)
          DllCall("UnregisterSuspendResumeNotification", "ptr", hwndNotification)
+      If (hDisplay)
+         DllCall("UnregisterPowerSettingNotification", "Ptr", hDisplay)
    }
 }
 

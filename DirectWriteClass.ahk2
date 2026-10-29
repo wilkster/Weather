@@ -65,7 +65,7 @@ class D2DText {
    /** Handlers for WM_PAINT / WM_ERASEBKGND, kept so they can be unhooked. */
    _paintFn := 0, _eraseFn := 0
    /** Uniform line height and baseline in DIPs; 0 = not set (see SetLineHeight). */
-   _lineH := 0, _lineBase := 0
+   _lineH := 0, _lineBase := 0, _retry := 0
    /** Window DPI at target creation, and 96 / DPI (pixels -> DIPs). */
    _dpi := 96, sf := 1, _pw := 0, _ph := 0
    _dpiFn := 0
@@ -336,6 +336,17 @@ class D2DText {
       this._SyncTarget()
       w := this._pw, h := this._ph
       rt := this._rt
+
+      ; D2D1_WINDOW_STATE_OCCLUDED = 1. Nothing is presented while occluded (lock screen, display off),
+      ; and BeginPaint/EndPaint already validated the region, so no further WM_PAINT will come.
+      st := ComCall(57, rt, "Int")                               ; CheckWindowState
+      If (st & 1) {
+         OutputDebug("D2DText occluded, retry " this._retry)
+         this._RetryLater()
+         Return
+      }
+      this._retry := 0
+
       ComCall(48, rt, "Int")                                     ; BeginDraw (void)
       ComCall(47, rt, "Ptr", D2DText._Color(this._bg), "Int")    ; Clear (void)
 
@@ -363,7 +374,16 @@ class D2DText {
       } else if hr
          OutputDebug "EndDraw hr=" Format("{:#x}", hr & 0xFFFFFFFF)
    }
-
+   /** Window was occluded, so try again shortly. Gives up after ~10 s or if the control is hidden (Show repaints it). */
+   _RetryLater() {
+      If (this._retry++ >= 20 || !DllCall("IsWindowVisible", "Ptr", this._ctrl.Hwnd))
+         Return
+      SetTimer(this._RetryDraw.Bind(this), -500)
+   }
+   _RetryDraw() {
+      If (this._ctrl && this._rt)   ; may have been disposed meanwhile
+         this.Refresh()
+   }
    /**
     * Creates the HWND render target at the window's DPI (physical-pixel size from GetClientRect) and the solid color brush.
     * @throws {OSError} If the render target or brush cannot be created.
