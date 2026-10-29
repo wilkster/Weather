@@ -34,6 +34,7 @@ class Weather {
    Static maxRows       := 8
    Static mks           := 0
    Static fontScaleFactor := 1
+   Static Assets :=     A_ScriptDir . "\Assets\"
   /*
       WMO Weather Codes Reference
       Code	      Description
@@ -359,7 +360,7 @@ class Weather {
       ; This allows duplicate entries or just loc=.......
       If (FileExist(this.iniFile)) {
          this.Menu.Add("Manage Locations", (*) => LocationManager.Show())  ; Creates a new menu item.
-         this.Menu.SetIcon("Manage Locations", A_ScriptDir "\Assets\" "Location.Ico")
+         this.Menu.SetIcon("Manage Locations", this.Assets "Location.Ico")
          this.Menu.Add()
          maxLoc :=IniRead(this.iniFile, "Default", "Max Locations", 50)
          for idx,loc in this.ReadLocations(this.iniFile) {
@@ -381,7 +382,7 @@ class Weather {
 
       this.Menu.Add()
       this.Menu.Add("Edit Settings File", (*) => Run(this.iniFile))  ; Creates a new menu item.
-      this.Menu.SetIcon("Edit Settings File", A_ScriptDir "\Assets\" "Settings.Ico")
+      this.Menu.SetIcon("Edit Settings File", this.Assets "Settings.Ico")
 
       mn := "Always On Top"
       this.Menu.Add(mn, ToggleOnTop)  ; Creates a new menu item.
@@ -395,7 +396,7 @@ class Weather {
 
       this.Menu.Add()
       this.Menu.Add("Exit", (*) => ExitApp())
-      this.Menu.SetIcon("Exit", A_ScriptDir "\Assets\" "Exit.Ico")
+      this.Menu.SetIcon("Exit", this.Assets "Exit.Ico")
       ToggleOnTop(*) {
          this.OnTop := !this.OnTop
          IniWrite(this.OnTop, this.iniFile, A_ComputerName, "OnTop")
@@ -722,10 +723,10 @@ class Weather {
       this.Ctl.updated.Text := "Updated " FormatTime(, "h:mm tt")
       ; Added for tray and icons
       If (this.Icons.has(code)) {
-         Icon := A_ScriptDir . "\Assets\" . this.Icons[code] . ".ico"
+         Icon := this.Assets . this.Icons[code] . ".ico"
          ; Night time has some adjustments
          If (NOT isDay) {
-            AltIcon := A_ScriptDir . "\Assets\Night " . this.Icons[code] . ".ico"
+            AltIcon := this.Assets . "Night " . this.Icons[code] . ".ico"
             if (FileExist(AltIcon))
                Icon := AltIcon
          }
