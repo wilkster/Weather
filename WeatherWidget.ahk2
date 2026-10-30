@@ -189,8 +189,12 @@ class Weather {
       OnMessage(0x232, this.SnapToWorkArea.bind(this))   ; WM_EXITSIZEMOVE
       OnMessage(0x404, this.TrayMessage.Bind(this))
       this.cbUpdateData := this.RefreshData.bind(this)
-
-      this.RefreshData()
+      If (ComObject("{DCB00C01-570F-4A9B-8D69-199FDBA5723B}").IsConnectedToInternet) {
+         this.RefreshData()
+      } Else {
+         MsgBox("You do not seem to be connected to the internet which is required for data")
+         SetTimer(this.cbUpdateData, this.Interval * 60000)
+      }
       OnExit this.SaveOnExit.bind(this)
       Sleep(100)
    }
@@ -539,7 +543,9 @@ class Weather {
    Static RefreshData(*) {
       ok := this.UpdateWeather()
       ok := this.UpdateAirQuality() && ok
-      WinRedraw(this.Gui) ; for the transparent controls
+      ; WinRedraw(this.Gui) ; for the transparent controls
+      Weather.RefresMe()
+
       SetTimer(this.cbUpdateData, ok ? this.Interval * 60000 : -60000)
       this.PruneMemory()
       OutputDebug("WeatherWidget: Updated Weather and Air Quality for " this.name)
@@ -927,8 +933,8 @@ class Weather {
       Return place
    }
    ; Trigger a paint for the D2D elements, shouldn't flash
-   ; RDW_INVALIDATE|RDW_ALLCHILDREN|RDW_UPDATENOW
-   Static RefresMe() => DllCall("RedrawWindow", "Ptr", Weather.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0001|0x0080|0x0100)
+   ; RDW_INVALIDATE|RDW_ALLCHILDREN|RDW_UPDATENOW|RDW_ERASE
+   Static RefresMe() => DllCall("RedrawWindow", "Ptr", Weather.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0001|0x0080|0x0100|0x0004)
 
    /**
     * Update the active location name if it was renamed
@@ -1015,7 +1021,6 @@ SetupEventMonitoring() {
       Return
       Static RefreshGui() {
          Weather.RefresMe()
-         ; D2DText.RefreshAll(Weather.Gui)
       }
    }
    ;----------------------------------------------------------------------
