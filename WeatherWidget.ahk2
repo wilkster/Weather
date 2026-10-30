@@ -217,11 +217,11 @@ class Weather {
       this.Ctl.loc     := this.AddTextCtl(fs("w265"),                    this.Name,    fs("s9")  " cA6ADC8",      "Segoe UI")  ; Los Angeles
 
       this.Ctl.temp    := this.AddTextCtl(fs("w78 y+2") " Right",        "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; 75
-      this.Ctl.AQI     := this.AddTextCtl(fs("w40 x+0 yp+12") " Right",  "---",        fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; 34 same row
+      this.Ctl.AQI     := this.AddTextCtl(fs("w43 x+0 yp+12") " Right",  "---",        fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; 34 same row
       this.Ctl.AQIlab  := this.AddTextCtl(fs("w30 x+2 yp+13"),           "aqi",        fs("s9")  " cA6ADC8 Norm", "Segoe UI")  ; aqi same row
 
       this.Ctl.hilo    := this.AddTextCtl(fs("w265 xm y+20"),            "Loading...", fs("s11") " cCDD6F4 Norm", "Segoe UI")  ; H/L temp
-      this.Ctl.cond    := this.AddTextCtl("wp xp yp Right",,                           fs("s11") " cCDD6F4 Bold", "Segoe UI")  ; Partly Cloudy on right
+      this.Ctl.cond    := this.AddTextCtl("wp xp-8 yp Right",,                         fs("s11") " cCDD6F4 Bold", "Segoe UI")  ; Partly Cloudy on right
 
       this.Ctl.detail  := this.AddTextCtl(fs("wp xm y+8"),,                            fs("s11") " cc7cfeb Norm", "Segoe UI")  ; Feels like ...
 
@@ -231,8 +231,10 @@ class Weather {
          this.Gui.SetFont(fs("S22"), "Consolas")
          this.Ctl.moon   := this.Gui.AddD2DText(fs("w50 x+8 yp-6 Right"), ,            "Segoe UI", fs(20), "f3f4cd")   ; Moon phase, larger
          this.Gui.SetFont(fs("S12"), "Consolas")
-         this.Ctl.hourly := this.Gui.AddD2DText(fs("w265 xm y+8") " r" (this.maxRows + 1),,"Consolas", fs(10), "CDD6F4")   ; Direct Write for emojis
-         this.Ctl.daily  := this.Gui.AddD2DText(fs("wp y+8") " r" (this.forecastDays + 1),,"Consolas", fs(10), "CDD6F4")   ; Direct Write for emojis
+         this.Ctl.hourly := this.Gui.AddD2DText(fs("w265 xm y+8") " r" (this.maxRows + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write for emojis
+         this.Ctl.hourly.SetTabStop(4.9) ; Hand Tuned
+         this.Ctl.daily  := this.Gui.AddD2DText(fs("wp y+8") " r" (this.forecastDays + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write for emojis
+         this.Ctl.daily.SetTabStop(3) ; Hand Tuned
       } Else {
          this.Ctl.srss    := this.AddTextCtl(fs("w200 y+8") " Center", ,                fs("s12") " cf3f4cd", "Segoe UI")
          this.Ctl.moon    := this.AddTextCtl(fs("w50 x+8 yp-6"), ,                      fs("S20") " cf3f4cd", "Segoe UI")
@@ -650,14 +652,17 @@ class Weather {
     * @param json Json text to parse
     */
    static RenderWeather(json) {
-      cur := this.Section(json, "current")
-      day := this.Section(json, "daily")
-      hrs := this.Section(json, "hourly")
+      cur    := this.Section(json, "current")
+      day    := this.Section(json, "daily")
+      hrs    := this.Section(json, "hourly")
 
       code  := Integer(this.Value(cur, "weather_code"))
       isDay := Integer(this.Value(cur, "is_day"))
       tf    := Round(this.Value(cur, "temperature_2m"))
       d     := Compass(this.Value(cur, "wind_direction_10m"))
+      ; Time for weather location
+      off      := Integer(this.Value(json, "utc_offset_seconds"))
+      localNow := DateAdd(A_NowUTC, off, "Seconds")
 
       ; change background if transitioning from day ⬌ Night
       bgc := isDay ? "1E1E2E" : "11111B"
@@ -688,7 +693,7 @@ class Weather {
       out := ""
       Loop this.forecastDays {
          if A_Index == 1
-            out := "Day  ――――――Temp―――――  Prec   Wind`n"
+            out := "Day   ―――Temp――― Prec   Wind`n"
          i         := A_Index
          hi        := this.lpad(Round(this.List(day, "temperature_2m_max")[i]),4)
          lo        := this.lpad(Round(this.List(day, "temperature_2m_min")[i]),4)
@@ -697,7 +702,7 @@ class Weather {
          fDate     := Trim(StrReplace(this.List(day, "time")[i],'-'),'"')
          dayOfWeek := this.rpad(FormatTime(fDate, "ddd"),3)
          wc        := this.emoji.get(Integer(this.List(day, "weather_code")[i]), "🌈")
-         out       .= dayOfWeek " " lo "° to" hi "° " wc (IsNumber(pop) ? this.lpad(pop,4) : "--") "%" this.lpad(ws,4) wsu "`n"
+         out       .= dayOfWeek (this.useD2D ? "`t" : "") lo "° to" hi "° " wc (IsNumber(pop) ? this.lpad(pop,4) : "--") "%" this.lpad(ws,4) wsu "`n"
       }
       this.Ctl.daily.Text := RTrim(out)
       ;-----------------------------------------------------------------------
@@ -716,7 +721,7 @@ class Weather {
       out := ""
       while (A_Index <= this.maxRows && i <= temps.Length) {
          if A_Index == 1
-            out   := "   Time   Temp     Prec   Wind`n"
+            out   := "  Time     Temp   Prec    Wind`n"
          hr := Mod(h0 + i - 1, 24)   ; clock hour for this element
          dn := dns[i]
          t  := temps[i]
@@ -728,7 +733,8 @@ class Weather {
             wc := this.MoonPhase()
          else
             wc := this.emoji.get(wcn, "🌈")
-         out .=  this.lpad(this.Hour12(hr), 5) . " " . daynight(dn)
+         ; TODO - the daynight emojis are displayed one pixel difference, so use a tab
+         out .=  this.lpad(this.Hour12(hr), 5) . " " . daynight(dn) . (this.useD2D ? "`t" : "")
             . this.lpad(IsNumber(t) ? (Round(t) "°") : "--", 5) . " " . wc
             . this.lpad(IsNumber(p) ? (p "%") : "--", 5)
             . this.lpad(IsNumber(w) ? (Round(w) . wsu) : ("--"), 9) d "`n"
@@ -736,7 +742,7 @@ class Weather {
       }
       this.Ctl.hourly.Text := RTrim(out, "`n")
 
-      this.Ctl.updated.Text := "Updated " FormatTime(, "h:mm tt")
+      this.Ctl.updated.Text := "Updated " FormatTime(, "h:mm tt") "    Local Time " FormatTime(localNow, "MMM d, h:mm tt")
       ; Added for tray and icons
       If (this.Icons.has(code)) {
          Icon := this.Assets . this.Icons[code] . ".ico"
@@ -769,8 +775,9 @@ class Weather {
    static Value(sec, key)     => RegExMatch(sec, '"' key '":(-?[\d.]+)', &m) ? m[1] : ""
    static List(sec, key)      => RegExMatch(sec, '"' key '":\[([^\]]*)\]', &m) ? StrSplit(m[1], ",") : []
    static Hour12(h)           => ((h := Mod(h, 24)) = 0 ? 12 : h > 12 ? h - 12 : h) (h < 12 ? " AM" : " PM")
-   static lpad(s, n)          => Format("{:" n "}", s)
-   static rpad(s, n)          => Format("{:-" n "}", s)
+   s := StrReplace(Format("{:5}", 75), " ", " ") "°"    ; "   75°" with digit-width padding
+   static lpad(s, n)          => StrReplace(Format("{:" n "}", s)," "," ") 
+   static rpad(s, n)          => StrReplace(Format("{:-" n "}", s)," "," ")
    Static FormatLR(left, right, total := 80) {
       pad := Max(total - StrLen(left), StrLen(right))
       Return Format("{1}{2:" pad "s}", left, right)

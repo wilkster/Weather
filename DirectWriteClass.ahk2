@@ -297,15 +297,15 @@ class D2DText {
       ComCall(5, this._fmt, "Int", on ? 0 : 1)                   ; SetWordWrapping
       this.Refresh()
    }
-
-   /** Resizes the render target to the control's current client size and repaints. Called by Move; call it yourself if you resize the control another way. */
-   ; Resize() {
-   ;    this._ClientSize(&w, &h)
-   ;    sz := D2D1_SIZE_U()
-   ;    sz.width := w, sz.height := h
-   ;    ComCall(58, this._rt, "ptr", sz)                           ; ID2D1HwndRenderTarget::Resize
-   ;    this.Refresh()
-   ; }
+   /**
+    * Sets the tab stop width, so text after a tab character lines up in columns with proportional fonts.
+    * @param {Number} em Tab width in multiples of the font size (default 3.5 fits a 3-letter day name plus a gap).
+    */
+   SetTabStop(em := 3.5) {
+      this._tabEm := em
+      ComCall(8, this._fmt, "Float", em * this._size * 96 / 72, "Int")   ; SetIncrementalTabStop (DIPs)
+      this.Refresh()
+   }
    Resize() => this.Refresh()
    /** Invalidates the control and repaints it now through the WM_PAINT path (_OnPaint). Use this instead of Draw for updates. */
    Refresh() {
