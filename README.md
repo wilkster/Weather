@@ -4,6 +4,10 @@ A compact, low system impact, always-available desktop weather widget for Window
 
 ![alt text](./Snips/ScreenShot.PNG)
 
+View without Intervals
+
+![alt text](./Snips/NoIntervals.png)
+
 No API keys or accounts are needed. Weather and air quality come from [Open-Meteo](https://open-meteo.com/), and place names are resolved with OpenStreetMap [Nominatim](https://nominatim.openstreetmap.org/).
 
 ---
