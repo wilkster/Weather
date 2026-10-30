@@ -782,8 +782,9 @@ class Weather {
    static List(sec, key)      => RegExMatch(sec, '"' key '":\[([^\]]*)\]', &m) ? StrSplit(m[1], ",") : []
    static Hour12(h)           => ((h := Mod(h, 24)) = 0 ? 12 : h > 12 ? h - 12 : h) (h < 12 ? " AM" : " PM")
    s := StrReplace(Format("{:5}", 75), " ", " ") "°"    ; "   75°" with digit-width padding
-   static lpad(s, n)          => StrReplace(Format("{:" n "}", s)," "," ") 
-   static rpad(s, n)          => StrReplace(Format("{:-" n "}", s)," "," ")
+   static lpad(s, n)          => StrReplace(StrReplace(Format("{:" n "}", s)," "," "),"-","‒")
+   static rpad(s, n)          => StrReplace(StrReplace(Format("{:-" n "}", s)," "," "),"-","‒")
+   static fixfix(st)          => StrReplace(StrReplace(st," "," "),"-","‒")
    Static FormatLR(left, right, total := 80) {
       pad := Max(total - StrLen(left), StrLen(right))
       Return Format("{1}{2:" pad "s}", left, right)
