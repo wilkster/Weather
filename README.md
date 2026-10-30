@@ -1,6 +1,6 @@
 # Weather Widget
 
-A compact, low system impact, always-available desktop weather widget for Windows, written in AutoHotkey v2.1 (Requires 2.1 Alpha 23 or later). It shows current conditions, air quality, an hourly outlook, and a multi-day forecast in a small borderless window, and mirrors the current conditions in the system tray icon.
+A compact, low system impact, always-available desktop weather widget for Windows, written in AutoHotkey v2.1 alpha. It shows current conditions, air quality, an hourly outlook, and a multi-day forecast in a small borderless window, and mirrors the current conditions in the system tray icon.
 
 ![alt text](./Snips/ScreenShot.PNG)
 
@@ -26,14 +26,13 @@ No API keys or accounts are needed. Weather and air quality come from [Open-Mete
 ### Hourly forecast
 
 - Time, day/night marker, temperature, weather emoji, chance of precipitation, wind speed and direction
-- Starts at the next hour, with configurable row count and hour spacing
-- Moon-phase symbol shown in place of the sun on clear nights
-- Hourly increment and total rows show are user configurable
+- Starts at the next hour, with configurable row count and hour spacing (including 0 rows)
+- Hourly increment and total rows show are user configurable (0 to 15)
 
 ### Daily forecast
 
 - Weekday, low and high temperature, weather emoji, max precipitation chance, and max wind
-- 1 to 16 days, configurable
+- 0 to 16 days, configurable
 
 ### Window and display
 
@@ -45,6 +44,7 @@ No API keys or accounts are needed. Weather and air quality come from [Open-Mete
 - Stays on all virtual desktops
 - Snaps back fully onto a monitor's work area if it ends up off-screen, e.g. after a monitor change
 - Window position is remembered between sessions
+- Option to stay on-top of other windows
 
 ### Tray icon
 
@@ -59,8 +59,7 @@ No API keys or accounts are needed. Weather and air quality come from [Open-Mete
 - Refreshes shortly after unlocking the workstation (about 5 s) or resuming from sleep (about 10 s)
 - Refresh timer is paused while the session is locked
 - Redraws the window after a display configuration change
-- Releases working-set memory after each refresh to keep the footprint small
-- Multiple instances are allowed (`#SingleInstance Off`)
+- Multiple instances are allowed, but they share a common configuration file
 
 ---
 
@@ -102,10 +101,55 @@ A resizable dialog for maintaining your saved locations:
 | **Move Up / Move Down** | Reorder the selected location (this is the order shown in the right-click menu) |
 | **Select** | Switch the widget to the selected location |
 | **Remove** | Delete the selected location from the list |
+| **Rename** | Rename the selected entry without changing location data |
 | **Edit box + Add** | Type a place name (e.g. `Denver, CO` or `Paris, France`). It is verified through a geocoding lookup before being added; unknown places are rejected. |
 | **Close** | Close the dialog (Esc also works) |
 
 Duplicate names are rejected. Coordinates are cached in the INI file, so switching to a known location does not need another geocoding lookup.
+
+---
+
+## Quick Install with executable
+
+- Download the `WeatherWidget.zip` file into a folder of your choice and unzip the contents. 
+- Click on the `WeatherWidget.exe` file to run it.
+- RMB and add shortcut if desired. You may also drag a shortcut into your Startup folder to autostart on next login.
+- On the first run, if no location is configured, you are prompted for one. An estimate based on your IP address is pre-filled; edit it as needed. That will be the last time your are promted for a location.
+
+## Requirements
+
+- Windows 10 or 11
+- [AutoHotkey v2.1](https://www.autohotkey.com/) or later (`#Requires AutoHotkey v2.1-`) if not using the supplied executable
+- `DirectWriteClass.ahk2` in the same folder (provides the `D2DText` class used for color emoji)
+- Internet access for weather, air quality, and location lookups
+
+### Icon files (optional but highly recommended)
+
+Place `.ico` files in the script Assets folder. The tray icon and the picture in the widget corner are chosen by condition name:
+
+`Clear`, `Light Clouds`, `Partly Cloudy`, `Overcast`, `Fog`, `Drizzle`, `Freezing drizzle`, `Light Showers`, `Rain`, `Freezing rain`, `Light Snow`, `Snow`, `Heavy Snow`, `Thunderstorm`
+
+At night, the widget first looks for the same name prefixed with `Night` (e.g. `Night Clear.ico`) and falls back to the daytime icon. Missing icons are skipped without error.
+
+---
+
+## Running and building the Script
+
+1. Place `WeatherWidget.ahk2`, `DirectWriteClass.ahk2`, and the icon files in one folder along with the `ICO` files.
+2. You can run `WeatherWidget.ahk2` directly with AutoHotkey v2.1+ (change the file extension if needed for your setup)
+
+To produce a standalone `Weather.exe`, compile with Ahk2Exe. The script's `;@Ahk2Exe-` directives already set the name, version, copyright, and main icon (`Partly Cloudy.ico`).
+
+---
+
+## Data sources
+
+| Purpose | Service |
+| --- | --- |
+| Weather forecast | `api.open-meteo.com` |
+| US AQI | `air-quality-api.open-meteo.com` |
+| Place name to coordinates | `nominatim.openstreetmap.org` |
+| Default location estimate (first run only) | `ipwho.is` |
 
 ---
 
@@ -155,41 +199,3 @@ FullName=Denver, Colorado, United States
 | `CC`, `Lat`, `Lon`, `FullName` | `[<place name>]` | Cached geocoding result for that place | |
 
 Changes made through the menu are written immediately. Edits made by hand to the refresh interval, forecast days, hourly interval, and max rows are picked up the next time you switch locations; for other settings, restart the widget.
-
----
-
-## Requirements
-
-- Windows 10 or 11
-- [AutoHotkey v2.1](https://www.autohotkey.com/) or later (`#Requires AutoHotkey v2.1-`)
-- `DirectWriteClass.ahk2` in the same folder (provides the `D2DText` class used for color emoji)
-- Internet access for weather, air quality, and location lookups
-
-### Icon files (optional but recommended)
-
-Place `.ico` files in the script folder. The tray icon and the picture in the widget corner are chosen by condition name:
-
-`Clear`, `Light Clouds`, `Partly Cloudy`, `Overcast`, `Fog`, `Drizzle`, `Freezing drizzle`, `Light Showers`, `Rain`, `Freezing rain`, `Light Snow`, `Snow`, `Heavy Snow`, `Thunderstorm`
-
-At night, the widget first looks for the same name prefixed with `Night ` (e.g. `Night Clear.ico`) and falls back to the daytime icon. Missing icons are skipped without error.
-
----
-
-## Running and building
-
-1. Place `WeatherWidget.ahk2`, `DirectWriteClass.ahk2`, and the icon files in one folder along with the `ICO` files.
-2. Can run `Weather.exe` directly or `WeatherWidget.ahk2`with AutoHotkey v2.1+
-3. On the first run, if no location is configured, you are prompted for one. An estimate based on your IP address is pre-filled; edit it as needed. That will be the last time your are promted for a location.
-
-To produce a standalone `Weather.exe`, compile with Ahk2Exe. The script's `;@Ahk2Exe-` directives already set the name, version, copyright, and main icon (`Partly Cloudy.ico`).
-
----
-
-## Data sources
-
-| Purpose | Service |
-| --- | --- |
-| Weather forecast | `api.open-meteo.com` |
-| US AQI | `air-quality-api.open-meteo.com` |
-| Place name to coordinates | `nominatim.openstreetmap.org` |
-| Default location estimate (first run only) | `ipwho.is` |
