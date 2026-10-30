@@ -79,8 +79,8 @@ No API keys or accounts are needed. Weather and air quality come from [Open-Mete
 | --- | --- |
 | **Manage Locations** | Opens the Location Manager (see below) |
 | *Location list* | Your saved locations, in the order they appear in the INI file. Click one to switch. The current location is checked. |
-| **Display Forecast Days** | 1 to 16 days of daily forecast |
-| **Display Max Hourly Rows** | 1 to 15 rows of hourly forecast |
+| **Display Forecast Days** | 0 to 16 days of daily forecast |
+| **Display Max Hourly Rows** | 0 to 15 rows of hourly forecast |
 | **Display Hourly Interval** | Hours between hourly rows, 1 to 6 |
 | **Refresh Minute Interval** | 5 to 60 minutes, in steps of 5 |
 | **Display Scale Factor** | 0.75, 0.8, 0.9, 0.95, 1, 1.05, 1.1, 1.2, 1.25, 1.5, 1.75, 2.0 (rebuilds the window) |
