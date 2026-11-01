@@ -66,7 +66,7 @@ class D2DText {
    /** Handlers for WM_PAINT / WM_ERASEBKGND, kept so they can be unhooked. */
    _paintFn := 0, _eraseFn := 0
    /** Uniform line height and baseline in DIPs; 0 = not set (see SetLineHeight). */
-   _lineH := 0, _lineBase := 0, _retry := 0
+   _lineH := 0, _lineBase := 0, _retry := 0, _tabEm := 0
    /** Window DPI at target creation, and 96 / DPI (pixels -> DIPs). */
    _dpi := 96, sf := 1, _pw := 0, _ph := 0
    _dpiFn := 0
@@ -180,8 +180,7 @@ class D2DText {
             fg := D2DText._SysColor(8)                           ; COLOR_WINDOWTEXT
       }
 
-      inst := D2DText(ctrl, text, font, size, fg, weight, pad)
-      inst := D2DText(ctrl, text, font, size, fg, weight, pad)
+      inst := this(ctrl, text, font, size, fg, weight, pad)      ; `this` is the class: D2DText, or a subclass such as D2DGrid
       ctrl.D2D := inst           ; keeps the instance alive as long as the control exists
 
       ; Alignment: AddText applies Left/Center/Right to the native control, but D2D draws the text itself
@@ -346,6 +345,24 @@ class D2DText {
       ComCall(48, rt, "Int")                                     ; BeginDraw (void)
       ComCall(47, rt, "Ptr", D2DText._Color(D2DText._GuiBack(this._ctrl.Gui)), "Int")   ; Clear (void) with the GUI's current BackColor
 
+      this._Render(rt, w, h)
+
+      ; "Int" return type so D2DERR_RECREATE_TARGET is returned instead of thrown
+      hr := ComCall(49, rt, "Ptr", 0, "Ptr", 0, "Int")           ; EndDraw
+      if (hr & 0xFFFFFFFF) = 0x8899000C {   ; D2DERR_RECREATE_TARGET
+         this._FreeTarget()
+         this._CreateTarget()
+         this.Draw()
+      } else if hr
+         OutputDebug "EndDraw hr=" Format("{:#x}", hr & 0xFFFFFFFF)
+   }
+   /**
+    * Draws the control's content between BeginDraw and EndDraw. Subclasses override this (see D2DGrid).
+    * @param {Integer} rt ID2D1HwndRenderTarget pointer.
+    * @param {Integer} w Client width in physical pixels.
+    * @param {Integer} h Client height in physical pixels.
+    */
+   _Render(rt, w, h) {
       p := this._pad
       rc := D2D1_RECT_F()
       rc.left := p, rc.top := p
@@ -360,15 +377,6 @@ class D2DText {
          , "Int", 4
          , "Int", 0
          , "Int")   ; DrawText (void)
-
-      ; "Int" return type so D2DERR_RECREATE_TARGET is returned instead of thrown
-      hr := ComCall(49, rt, "Ptr", 0, "Ptr", 0, "Int")           ; EndDraw
-      if (hr & 0xFFFFFFFF) = 0x8899000C {   ; D2DERR_RECREATE_TARGET
-         this._FreeTarget()
-         this._CreateTarget()
-         this.Draw()
-      } else if hr
-         OutputDebug "EndDraw hr=" Format("{:#x}", hr & 0xFFFFFFFF)
    }
    /** Window was occluded, so try again shortly. Gives up after ~10 s or if the control is hidden (Show repaints it). */
    _RetryLater() {
@@ -441,6 +449,8 @@ class D2DText {
       this._fmt := fmt
       ComCall(3, fmt, "Int", this._align)                        ; SetTextAlignment
       ComCall(5, fmt, "Int", this._wrap ? 0 : 1)                 ; SetWordWrapping
+      if this._tabEm
+         ComCall(8, fmt, "Float", this._tabEm * this._size * 96 / 72, "Int")   ; SetIncrementalTabStop
       this._ApplyLineHeight()
    }
 
@@ -576,8 +586,180 @@ class D2DText {
       this._ctrl.GetPos(&X, &Y, &W, &H)
    }
 }
+
+/**
+ * Draws a table of colored text/emoji cells into one control. Each column has an alignment, a fixed or auto width
+ * (auto = measured with DirectWrite) and an optional gap after it, so emoji and proportional fonts line up without
+ * padding tricks. Rows are one uniform line high (SetLineHeight is applied automatically; call it again to override).
+ * Widths and gaps are in DIPs (1/96 inch), like pad. Wrapping is off.
+ *   Column: {al: "Left"|"Right"|"Center", w: DIPs | "auto", gap: DIPs after this column (default: SetGap, 8)}
+ *   Cell:   a string, or {t: text, c: 0xRRGGBB, al: alignment override, span: number of columns to cover}
+ * A cell with span > 1 is aligned within the combined width of the columns it covers and does not affect auto
+ * widths, which makes it suitable for headers.
+ * @example
+ * g := myGui.AddD2DGrid("w300 cD7DCFF")
+ * g.SetColumns([{al: "Left", w: "auto"}, {al: "Right", w: "auto", gap: 3}, {al: "Left", w: "auto"}])
+ * g.SetRows([[{t: "Day / Temp", span: 3, al: "Center"}], ["Sat", "26°", "⛅"], ["Sun", {t: "24°", c: 0xFF8080}, "☃"]])
+ * g.Fit()
+ */
+class D2DGrid extends D2DText {
+   _cols := [], _rows := [], _gap := 8, _dirty := true, _items := []
+   __New(args*) {
+      super.__New(args*)
+      this.SetWrap(false)
+      this.SetLineHeight()
+   }
+   __Delete() {
+      this._FreeLayouts()
+      super.__Delete()
+   }
+
+   _FreeLayouts() {
+      for items in this._items
+         for it in items
+            ObjRelease(it.p)
+      this._items := []
+   }
+
+   ; Cached layouts copy the shared format's settings when created, so changing them invalidates the cache
+   SetLineHeight(px?) {
+      this._dirty := true
+      super.SetLineHeight(px?)
+   }
+   SetAlign(align := "Left") {
+      this._dirty := true
+      super.SetAlign(align)
+   }
+   SetWrap(on := true) {
+      this._dirty := true
+      super.SetWrap(on)
+   }
+   SetTabStop(em := 3.5) {
+      this._dirty := true
+      super.SetTabStop(em)
+   }
+   /**
+    * Defines the columns.
+    * @param {Array} cols Objects {al: "Left"|"Right"|"Center", w: DIPs | "auto", gap: DIPs after the column}.
+    */
+   SetColumns(cols) {
+      for c in cols
+         c.a := D2DGrid._Al(c.HasProp("al") ? c.al : "Left")
+      this._cols := cols
+      this._dirty := true
+      this.Refresh()
+   }
+
+   /**
+    * Sets the rows and repaints.
+    * @param {Array} rows Array of arrays of cells: a string, or {t: text, c: 0xRRGGBB, al: alignment, span: columns}.
+    */
+   SetRows(rows) {
+      this._rows := rows
+      this._dirty := true
+      this.Refresh()
+   }
+
+   /** Sets the default horizontal gap after a column (columns without their own gap), in DIPs. */
+   SetGap(dips) {
+      this._gap := dips
+      this._dirty := true
+      this.Refresh()
+   }
+
+   /** Changes the font; column widths are re-measured. */
+   SetFont(font, size) {
+      this._dirty := true
+      super.SetFont(font, size)
+   }
+
+   /** Sizes the control's height to the row count. Assumes +DPIScale (GUI units are DIPs). */
+   Fit() => this.Move(, , , Ceil(this._rows.Length * this._lineH + 2 * this._pad))
+
+   static _T(cell)    => String(IsObject(cell) ? cell.t : cell)
+   static _Span(cell) => Max(1, IsObject(cell) && cell.HasProp("span") ? cell.span : 1)
+   static _Al(al)     => al = "Center" ? 2 : al = "Right" ? 1 : 0           ; DWRITE_TEXT_ALIGNMENT: leading, trailing, centered
+
+   /** Creates a layout for s from the shared format; &w receives its natural width in DIPs. The caller owns the layout. */
+   _NewLayout(s, &w) {
+      lay := 0
+      ComCall(18, D2DText._dw, "WStr", s, "UInt", StrLen(s), "Ptr", this._fmt
+         , "Float", 10000, "Float", 10000, "Ptr*", &lay)        ; CreateTextLayout
+      m := Buffer(40, 0)
+      ComCall(60, lay, "Ptr", m)                                ; GetMetrics (DWRITE_TEXT_METRICS)
+      w := NumGet(m, 8, "Float")
+      return lay
+   }
+   /** Computes each column's x and width. Run lazily from _Render when columns, rows or font changed. */
+   /** Builds one layout per non-empty cell, sizes auto columns, then fits each layout to its cell box. */
+   _Layout() {
+      this._FreeLayouts()
+      cols := this._cols, nc := cols.Length
+      for c in cols
+         c.cw := (c.HasProp("w") && (c.w is Number)) ? c.w : 0
+      ; pass 1: create layouts, auto columns take the widest single-column cell
+      for row in this._rows {
+         items := [], ci := 1
+         for cell in row {
+            if ci > nc
+               break
+            span := Min(D2DGrid._Span(cell), nc - ci + 1)
+            t := D2DGrid._T(cell)
+            if t != "" {
+               c := cols[ci]
+               lay := this._NewLayout(t, &tw)
+               if span = 1 && !(c.HasProp("w") && (c.w is Number))
+                  c.cw := Max(c.cw, tw)
+               items.Push({p: lay, ci: ci, span: span
+                  , al: IsObject(cell) && cell.HasProp("al") ? D2DGrid._Al(cell.al) : c.a
+                  , c: IsObject(cell) && cell.HasProp("c") ? D2DText._ToRGB(cell.c) : ""})
+            }
+            ci += span
+         }
+         this._items.Push(items)
+      }
+      ; column positions
+      x := this._pad
+      for c in cols {
+         c.x := x
+         x += c.cw + (c.HasProp("gap") ? c.gap : this._gap)
+      }
+      ; pass 2: fit each layout to the box of the columns it covers, and set its alignment
+      rh := this._lineH
+      for items in this._items
+         for it in items {
+            c := cols[it.ci], e := cols[it.ci + it.span - 1]
+            it.x := c.x
+            ComCall(28, it.p, "Float", e.x + e.cw - c.x)         ; SetMaxWidth
+            ComCall(29, it.p, "Float", rh)                       ; SetMaxHeight
+            if it.al != this._align
+               ComCall(3, it.p, "Int", it.al)                    ; SetTextAlignment (the layout was created with this._align)
+         }
+      this._dirty := false
+   }
+
+   _Render(rt, w, h) {
+      if this._dirty
+         this._Layout()
+      rh := this._lineH, clr := this._fg
+      pt := Buffer(8)
+      for r, items in this._items {
+         y := this._pad + (r - 1) * rh
+         for it in items {
+            want := it.c = "" ? this._fg : it.c
+            if want != clr
+               ComCall(8, this._brush, "Ptr", D2DText._Color(clr := want), "Int")   ; SetColor
+            NumPut("Float", it.x, "Float", y, pt)                                    ; D2D1_POINT_2F is passed by value
+            ComCall(28, rt, "Int64", NumGet(pt, "Int64"), "Ptr", it.p, "Ptr", this._brush, "Int", 4, "Int")   ; DrawTextLayout (void)
+         }
+      }
+      if clr != this._fg
+         ComCall(8, this._brush, "Ptr", D2DText._Color(this._fg), "Int")
+   }
+}
 ;@reference DirectWriteClass.d.ahk
 Gui.Prototype.DefineProp("AddD2DText", {Call: (g, args*) => D2DText.Create(g, args*)})
+Gui.Prototype.DefineProp("AddD2DGrid", {Call: (g, args*) => D2DGrid.Create(g, args*)})
 
 /*
 Notes:
@@ -596,6 +778,11 @@ Notes:
 - Emoji fallback fonts can increase line height; call SetLineHeight() to match native r<N> sizing.
 - ComCall with the default "HRESULT" return type throws an OSError on failure. Void methods
   (BeginDraw, Clear, DrawText, SetColor) and EndDraw use "Int" so nothing is thrown for them.
+- D2DGrid: alignment is per column (a cell can override it, SetAlign has no effect on a grid), column widths and gaps are
+  DIPs, and "auto" widths are measured with IDWriteTextLayout. Cells are not clipped; fixed-width columns narrower than their
+  text will overflow (use D2D1_DRAW_TEXT_OPTIONS_CLIP, 6 instead of 4 in _Render, to clip).
+- D2DText.Create builds `this(...)`, so subclasses created through their own Create (D2DGrid.Create) construct themselves.
+  Keep the factory calls as D2DText._Init() (not this._Init()) so subclasses share one pair of factories.
 - Not yet handling dynamic DPI if moved between monitors with different DPIs, would need to handle DPI change
 */
 
@@ -617,7 +804,21 @@ d1 := oGui.AddD2DText("w400 r7 cA6ADC8", txt)                    ; transparent, 
 d1.SetLineHeight()
 d2 := oGui.AddD2DText("w400 r1 cA6ADC8", "☀⛅☁☂☔⛈❄⛄⛈")          ; also transparent
 
+gr := oGui.AddD2DGrid("w300 cA6ADC8")
+gr.SetColumns([{al: "Left", w: "auto"}, {al: "Right", w: "auto"}, {al: "Left", w: "auto"}, {al: "Right", w: "auto"}, {al: "Left", w: "auto"}])
+gr.SetRows([["Sat", "26°", "to", "30°", "⛅"], ["Sun", "24°", "to", {t: "35°", c: 0xFF8080}, "☃"], ["Mon", "11°", "to", "27°", "❄"]])
+gr.Fit()
+
 oGui.Show("AutoSize")
 PruneMemory()
 oGui.OnEvent("Close", (*) => ExitApp())
 */
+
+
+QPC() {
+   static freq := 0
+   if !freq
+      DllCall("QueryPerformanceFrequency", "Int64*", &freq)
+   DllCall("QueryPerformanceCounter", "Int64*", &t := 0)
+   return t * 1000 / freq
+}

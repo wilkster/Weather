@@ -13,7 +13,6 @@ TODO
 - seems to stay on all desktops, this is desired
 - Don't make static so would could have multiple instances at once for different locations
   Pass in location name into __Init
-- Migrate to grid D2D and use that vs hand tuned spacing I have now.
 - Hourly air quality data? Wider GUI
 - Consider differnt layouts like MAC OS weather widget
 - https://github.com/Makin-Things/weather-icons (SVG, some are animated)
@@ -152,7 +151,6 @@ class Weather {
       this.iniFile := A_ScriptDir "\WeatherWidget.ini"
       this.NeedGeo := 1
       this.OnTop := 0
-      this.useD2D := 1
 
       ; Set default locations
       this.Name := IniRead(this.iniFile, A_ComputerName, "Loc", this.Name)
@@ -177,7 +175,6 @@ class Weather {
       this.forecastDays    := Integer(IniRead(this.iniFile, A_ComputerName, "Forecast Days", this.forecastDays))
       this.hourIncrement   := Integer(IniRead(this.iniFile, A_ComputerName, "Hours Increment", this.hourIncrement))
       this.maxRows         := Integer(IniRead(this.iniFile, A_ComputerName, "Max Rows", this.maxRows))
-      this.useD2D          := Integer(IniRead(this.iniFile, A_ComputerName, "UseD2D", this.useD2D))
       this.fontScaleFactor := Number(IniRead(this.iniFile, A_ComputerName, "FontScaling", this.fontScaleFactor))
 
       ; Build the GUI, should be DPI aware, composting helps with flicker
@@ -205,8 +202,7 @@ class Weather {
     */
    Static BuildGUI(X, Y) {
       If (this.Gui) {
-         if (this.useD2D)
-            D2DText.DisposeAll(this.Gui)
+         D2DText.DisposeAll(this.Gui)
          this.Gui.Destroy()
       }
       /** @type {Gui} */
@@ -230,22 +226,35 @@ class Weather {
 
       this.Ctl.detail  := this.AddTextCtl(fs("wp xm y+8"),,                            fs("s11") " cc7cfeb Norm", "Segoe UI")  ; Feels like ...
 
-      If (this.useD2D) {
-         this.Gui.SetFont(fs("S14"), "Consolas")
-         this.Ctl.srss   := this.Gui.AddD2DText(fs("w200 xm y+8"), ,                   "Segoe UI", fs(12), "f3f4cd")   ; Sunrise/Sunset
-         this.Gui.SetFont(fs("S22"), "Consolas")
-         this.Ctl.moon   := this.Gui.AddD2DText(fs("w50 x+8 yp-6 Right"), ,            "Segoe UI", fs(20), "f3f4cd")   ; Moon phase, larger
-         this.Gui.SetFont(fs("S12"), "Consolas")
-         this.Ctl.hourly := this.Gui.AddD2DText(fs("w270 xm y+8") " r" (this.maxRows + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write for emojis
-         this.Ctl.hourly.SetTabStop(4.9) ; Hand Tuned
-         this.Ctl.daily  := this.Gui.AddD2DText(fs("wp y+8") " r" (this.forecastDays + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write for emojis
-         this.Ctl.daily.SetTabStop(2.2) ; Hand Tuned
-      } Else {
-         this.Ctl.srss    := this.AddTextCtl(fs("w200 y+8") " Center", ,                fs("s12") " cf3f4cd", "Segoe UI")
-         this.Ctl.moon    := this.AddTextCtl(fs("w50 x+8 yp-6"), ,                      fs("S20") " cf3f4cd", "Segoe UI")
-         this.Ctl.hourly  := this.AddTextCtl(fs("w270 xm y+8") " r" (this.maxRows + 1),,fs("s10") " cBAC2DE", "Consolas")  ; subtext1
-         this.Ctl.daily   := this.AddTextCtl(fs("wp y+8") " r" (this.forecastDays + 1),,fs("s10") " cCDD6F4", "Consolas")  ; text
-      }
+      this.Gui.SetFont(fs("S14"), "Consolas")
+      this.Ctl.srss   := this.Gui.AddD2DText(fs("w200 xm y+8"), ,                   "Segoe UI", fs(12), "f3f4cd")   ; Sunrise/Sunset
+      this.Gui.SetFont(fs("S22"), "Consolas")
+      this.Ctl.moon   := this.Gui.AddD2DText(fs("w50 x+8 yp-6 Right"), ,            "Segoe UI", fs(20), "f3f4cd")   ; Moon phase, larger
+      ; The grids take their row height from the GUI font in effect here (r<N> sizing), so match it to the grid font
+      this.Gui.SetFont(fs("S10") " Norm", "Segoe UI")
+      ; Column widths are measured from the text; only the gaps (DIPs, scaled with fs like everything else) are tuned
+      this.Ctl.hourly := this.Gui.AddD2DGrid(fs("w270 xm y+8") " r" (this.maxRows + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write grid for emojis
+      this.Ctl.hourly.SetColumns([
+         {al: "Right", w: "auto", gap: fs(4)},    ; time
+         {al: "Left",  w: "auto", gap: fs(10)},   ; day / night icon
+         {al: "Right", w: "auto", gap: fs(4)},    ; temp
+         {al: "Left",  w: "auto", gap: fs(12)},   ; condition icon
+         {al: "Right", w: "auto", gap: fs(10)},   ; precip %
+         {al: "Right", w: "auto", gap: fs(4)},    ; wind speed
+         {al: "Left",  w: "auto", gap: fs(4)},    ; wind unit
+         {al: "Left",  w: "auto"}])               ; wind direction
+      this.Ctl.daily  := this.Gui.AddD2DGrid(fs("wp y+8") " r" (this.forecastDays + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write grid for emojis
+      this.Ctl.daily.SetColumns([
+         {al: "Left",  w: "auto", gap: fs(10)},   ; day
+         {al: "Right", w: "auto", gap: fs(4)},    ; low
+         {al: "Left",  w: "auto", gap: fs(4)},    ; "to"
+         {al: "Right", w: "auto", gap: fs(2)},    ; high
+         {al: "Left",  w: "auto", gap: fs(12)},   ; condition icon
+         {al: "Right", w: "auto", gap: fs(3)},    ; precip amount
+         {al: "Left",  w: "auto", gap: fs(2)},    ; precip unit
+         {al: "Left",  w: "auto", gap: fs(12)},   ; precip icon
+         {al: "Right", w: "auto", gap: fs(3)},    ; wind speed
+         {al: "Left",  w: "auto"}])               ; wind unit
       this.Ctl.updated := this.AddTextCtl(fs("wp y+8"),,                                fs("s8")  " c7F849C", "Segoe UI")  ; overlay1
       this.ActiveIcon := ""
       this.Ctl.Icon    := g.AddPicture(fs("H96 W96 X175 Y0"))      ; Pretty up the window
@@ -704,33 +713,27 @@ class Weather {
       ;-----------------------------------------------------------------------
       ; Daily Forecast
       ;-----------------------------------------------------------------------
-      out := ""
+      rows := []
       Loop this.forecastDays {
-         if A_Index   == 1
-         out       := "Day  ――Temp――   Prec      Wind`n"
-         i         := A_Index
-         hi        := this.lpad(Round(this.List(day, "temperature_2m_max")[i]),4)
-         lo        := this.lpad(Round(this.List(day, "temperature_2m_min")[i]),4)
-         ws        := Round(this.List(day, "wind_speed_10m_max")[i])
-         pop       := this.List(day, "precipitation_probability_max")[i]
-         psum      := Number(this.List(day, "precipitation_sum")[i])
-         ssum      := Number(this.List(day, "snowfall_sum")[i])
-         snowWater := this.mks ? ssum : ssum / 10
-         fDate     := Trim(StrReplace(this.List(day, "time")[i],'-'),'"')
-         dayOfWeek := this.rpad(FormatTime(fDate, "ddd"),3)
-         wc        := this.emoji.get(Integer(this.List(day, "weather_code")[i]), "🌈")
-         ; Snow or Rain 
-         ; Lots of space tweaking here to align on columns
+         i := A_Index
+         if i == 1
+            rows.Push([{t: "Day", al: "Left"}, {t: "――Temp――", span: 4, al: "Center"}, {t: "Prec", span: 3, al: "Center"}, {t: "Wind", span: 2, al: "Center"}])
+         psum := Number(this.List(day, "precipitation_sum")[i])
+         ssum := Number(this.List(day, "snowfall_sum")[i])
          if ((psum + ssum) < .01)
-            prec := this.lpad(round(ssum,1),5) (this.mks ? " ㎝   " : " in  ")
-         else if (snowWater >= psum * 0.5)
-            prec := this.lpad(round(ssum,1),5) (this.mks ? " ㎝ ❄" : " in❄")
+            pVal := Round(ssum, 1), pUnit := this.mks ? "㎝" : "in", pIcon := ""
+         else if ((this.mks ? ssum : ssum / 10) >= psum * 0.5)
+            pVal := Round(ssum, 1), pUnit := this.mks ? "㎝" : "in", pIcon := "❄"
          else
-            prec := this.lpad(round(psum,1),5) (this.mks ? " ㎜🌧️" : " in🌧️")
-         out       .= dayOfWeek (this.useD2D ? "`t" : "") lo "° to" hi "°" wc prec this.lpad(ws,4) wsu "`n"
-         ; out       .= dayOfWeek (this.useD2D ? "`t" : "") lo "° to" hi "° " wc (IsNumber(pop) ? this.lpad(pop,4) : "--") "%" this.lpad(ws,4) wsu "`n"
+            pVal := Round(psum, 1), pUnit := this.mks ? "㎜" : "in", pIcon := "🌧️"
+         dow := i == 1 ? "Today" : FormatTime(Trim(StrReplace(this.List(day, "time")[i], '-'), '"'), "ddd")
+         rows.Push([dow
+            , this.fixfix(Round(this.List(day, "temperature_2m_min")[i]) "°"), "to"
+            , this.fixfix(Round(this.List(day, "temperature_2m_max")[i]) "°")
+            , this.emoji.get(Integer(this.List(day, "weather_code")[i]), "🌈")
+            , pVal, pUnit, pIcon, Round(this.List(day, "wind_speed_10m_max")[i]), Trim(wsu)])
       }
-      this.Ctl.daily.Text := RTrim(out)
+      this.Ctl.daily.SetRows(rows)
       ;-----------------------------------------------------------------------
       ; Hourly data starts at the current hour (forecast_hours), not midnight
       ;-----------------------------------------------------------------------
@@ -744,10 +747,8 @@ class Weather {
       RegExMatch(times[1], "T(\d+)", &m)
       h0    := Integer(m[1])      ; clock hour of array element 1
       i     := 2                  ; element 2 = next hour
-      out := ""
+      rows := []
       while (A_Index <= this.maxRows && i <= temps.Length) {
-         if A_Index == 1
-            out   := "  Time     Temp   Prec    Wind`n"
          hr := Mod(h0 + i - 1, 24)   ; clock hour for this element
          dn := dns[i]
          t  := temps[i]
@@ -759,14 +760,15 @@ class Weather {
             wc := this.MoonPhase()
          else
             wc := this.emoji.get(wcn, "🌈")
-         ; TODO - the daynight emojis are displayed one pixel difference, so use a tab
-         out .=  this.lpad(this.Hour12(hr), 5) . " " . daynight(dn) . (this.useD2D ? "`t" : "")
-            . this.lpad(IsNumber(t) ? (Round(t) "°") : "--", 5) . " " . wc
-            . this.lpad(IsNumber(p) ? (p "%") : "--", 5)
-            . this.lpad(IsNumber(w) ? (Round(w) . wsu) : ("--"), 9) d "`n"
+         if A_Index == 1
+            rows.Push([{t: "Time", span: 2, al: "Center"}, {t: "Temp", span: 2, al: "Center"}, {t: "Prec", al: "Center"}, {t: "Wind", span: 3, al: "Center"}])
+         rows.Push([this.Hour12(hr), daynight(dn)
+            , IsNumber(t) ? this.fixfix(Round(t) "°") : "--", wc
+            , IsNumber(p) ? p "%" : "--"
+            , IsNumber(w) ? Round(w) : "--", Trim(wsu), d])
          i += this.hourIncrement
       }
-      this.Ctl.hourly.Text := RTrim(out, "`n")
+      this.Ctl.hourly.SetRows(rows)
 
       this.Ctl.updated.Text := "Updated " FormatTime(, "h:mm tt") "    Local Time " FormatTime(localNow, "MMM d, h:mm tt")
       ; Added for tray and icons
@@ -801,9 +803,6 @@ class Weather {
    static Value(sec, key)     => RegExMatch(sec, '"' key '":(-?[\d.]+)', &m) ? m[1] : ""
    static List(sec, key)      => RegExMatch(sec, '"' key '":\[([^\]]*)\]', &m) ? StrSplit(m[1], ",") : []
    static Hour12(h)           => ((h := Mod(h, 24)) = 0 ? 12 : h > 12 ? h - 12 : h) (h < 12 ? " AM" : " PM")
-   s := StrReplace(Format("{:5}", 75), " ", " ") "°"    ; "   75°" with digit-width padding
-   static lpad(s, n)          => StrReplace(StrReplace(Format("{:" n "}", s)," "," "),"-","‒")
-   static rpad(s, n)          => StrReplace(StrReplace(Format("{:-" n "}", s)," "," "),"-","‒")
    static fixfix(st)          => StrReplace(StrReplace(st," "," "),"-","‒")
    Static FormatLR(left, right, total := 80) {
       pad := Max(total - StrLen(left), StrLen(right))

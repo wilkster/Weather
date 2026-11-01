@@ -111,7 +111,7 @@ Duplicate names are rejected. Coordinates are cached in the INI file, so switchi
 
 ## Quick Install with executable
 
-- Download the `WeatherWidget.zip` file into a folder of your choice and unzip the contents. 
+- Download the `WeatherWidget.zip` file into a folder of your choice and unzip the contents.
 - Click on the `WeatherWidget.exe` file to run it.
 - RMB and add shortcut if desired. You may also drag a shortcut into your Startup folder to autostart on next login.
 - On the first run, if no location is configured, you are prompted for one. An estimate based on your IP address is pre-filled; edit it as needed. That will be the last time your are promted for a location.
@@ -167,7 +167,6 @@ Max Rows=8
 FontScaling=1
 OnTop=0
 MKS=0
-UseD2D=1
 X=1500
 Y=100
 
@@ -192,7 +191,6 @@ FullName=Denver, Colorado, United States
 | `FontScaling` | computer name | Display scale factor | 1 |
 | `OnTop` | computer name | 1 = always on top | 0 |
 | `MKS` | computer name | 1 = metric units | 0 |
-| `UseD2D` | computer name | 1 = Direct2D color emoji; 0 = plain text controls. Change by hand, then restart. | 1 |
 | `X`, `Y` | computer name | Saved window position | 0, 0 |
 | *(each line)* | `[Locations]` | Saved location names. A `key=value` form is accepted; only the value is used. | |
 | `Max Locations` | `[Default]` | Maximum locations listed in the right-click menu | 50 |
