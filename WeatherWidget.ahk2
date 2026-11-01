@@ -317,15 +317,15 @@ class Weather {
     * Call after adjusting one of the three settings that impact daily/hourly numbers below
     */
    Static ApplyRowCounts() {
-      ; This is somewhat inexact
       c := this.Ctl
-      gap := 8  * this.Dpi() / 96  ; matches your y+8, or measure it once in Init, TODO: May not need to scale
-      c.hourly.GetPos(, &hY) ; DPI Scaled
-      hH := this.maxRows ? this.rowH2 * (this.maxRows + 1) : -gap
-      dH := this.forecastDays ? this.rowH1 * (this.forecastDays + 1) : -gap
+      hg := c.hourly, dg := c.daily
+      gap := 8
+      hg.GetPos(, &hY)
+      hH := this.maxRows ? Ceil((this.maxRows + 1) * hg._lineH + 2 * hg._pad) : -gap
+      dH := this.forecastDays ? Ceil((this.forecastDays + 1) * dg._lineH + 2 * dg._pad) : -gap
       dY := hY + hH + gap
-      c.hourly.Move(, , , hH) ; adjust height onlu
-      c.daily.Move(, dY, , dH) ; height and new Y
+      hg.Move(, , , hH)               ; adjust height only
+      dg.Move(, dY, , dH)             ; height and new Y
       c.updated.Move(, dY + dH + gap) ; new Y only
       this.Gui.Show("NoActivate AutoSize")
    }
@@ -723,26 +723,27 @@ class Weather {
       ; Daily Forecast
       ;-----------------------------------------------------------------------
       rows := []
+      hc := 0xFFFFFF
       Loop this.forecastDays {
          i := A_Index
          if i == 1
             rows.Push([
-               {t: "Day", al: "Left"}, 
-               {t: "―Temp―", span: 4, al: "Center"}, 
-               {t: "―Prec―", span: 3, al: "Center"}, 
-               {t: "Wind", span: 2, al: "Center"}
+               {t: "Day", al: "Left", c:hc}, 
+               {t: "―Temp―", span: 4, al: "Center", c:hc}, 
+               {t: "―Prec―", span: 3, al: "Center", c:hc}, 
+               {t: "Wind", span: 2, al: "Center", c:hc}
             ])
          psum := Number(this.List(day, "precipitation_sum")[i])
          ssum := Number(this.List(day, "snowfall_sum")[i])
          if ((psum + ssum) < .01)
-            pVal := Round(ssum, 1), pUnit := this.mks ? "㎝" : "in", pIcon := ""
+            pVal := Round(ssum, 1), pUnit := this.mks ? "mm" : "in", pIcon := ""
          else if ((this.mks ? ssum : ssum / 10) >= psum * 0.5)
-            pVal := Round(ssum, 1), pUnit := this.mks ? "㎝" : "in", pIcon := "❄"
+            pVal := Round(ssum, 1), pUnit := this.mks ? "cm" : "in", pIcon := "❄"
          else
-            pVal := Round(psum, 1), pUnit := this.mks ? "㎜" : "in", pIcon := "🌧️"
+            pVal := Round(psum, 1), pUnit := this.mks ? "mm" : "in", pIcon := "🌧️"
          dow := i == 1 ? "Today" : FormatTime(Trim(StrReplace(this.List(day, "time")[i], '-'), '"'), "ddd")
          rows.Push([dow
-            , this.fixfix(Round(this.List(day, "temperature_2m_min")[i]) "°"), "to"
+            , this.fixfix(Round(this.List(day, "temperature_2m_min")[i]) "°"), "🠊"
             , this.fixfix(Round(this.List(day, "temperature_2m_max")[i]) "°")
             , this.emoji.get(Integer(this.List(day, "weather_code")[i]), "🌈")
             , pVal, pUnit, pIcon, Round(this.List(day, "wind_speed_10m_max")[i]), Trim(wsu)])
@@ -777,24 +778,28 @@ class Weather {
             wc := this.emoji.get(wcn, "🌈")
          if A_Index == 1
             rows.Push([
-               {t: "―Time―", span: 2, al: "Center"}, 
-               {t: "Temp", span: 2, al: "Center"}, 
-               {t: "AQI",  al: "Center"}, 
-               {t: "Prec", al: "Center"}, 
-               {t: "―Wind―", span: 3, al: "Center"}
+               {t: "―Time―", span: 2, al: "Center", c:hc}, 
+               {t: "Temp", span: 2, al: "Center", c:hc}, 
+               {t: "AQI",  al: "Center", c:hc}, 
+               {t: "Prec", al: "Center", c:hc}, 
+               {t: "―Wind―", span: 3, al: "Center", c:hc}
             ])
          rows.Push(
             [this.Hour12(hr), daynight(dn)
             , IsNumber(t) ? this.fixfix(Round(t) "°") : "--", wc
-            , isNumber(a) ? a : "--"
+            , IsNumber(a) ? {t: a, c: this.AqiColor(a)} : "--"
             , IsNumber(p) ? p "%" : "--"
             , IsNumber(w) ? Round(w) : "--", Trim(wsu), d])
          i += this.hourIncrement
       }
       this.Ctl.hourly.SetRows(rows)
-
+      ;-----------------------------------------------------------------------
+      ; Updated footer
+      ;-----------------------------------------------------------------------
       this.Ctl.updated.Text := "Updated " FormatTime(, "h:mm tt") "    Local Time " FormatTime(localNow, "MMM d, h:mm tt")
-      ; Added for tray and icons
+      ;-----------------------------------------------------------------------
+      ; Condition ICON
+      ;-----------------------------------------------------------------------
       If (this.Icons.has(code)) {
          Icon := this.Assets . this.Icons[code] . ".ico"
          ; Night time has some adjustments
