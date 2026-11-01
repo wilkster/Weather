@@ -216,7 +216,7 @@ class Weather {
          ym adds a margin
          r8 means 8 rows
       */
-      this.Ctl.loc     := this.AddTextCtl(fs("w270"),                    this.Name,    fs("s9")  " cA6ADC8",      "Segoe UI")  ; Los Angeles
+      this.Ctl.loc     := this.AddTextCtl(fs("w270"),                    this.Name,    fs("s11 Bold")  " cA6ADC8",      "Segoe UI")  ; Los Angeles
 
       this.Ctl.temp    := this.AddTextCtl(fs("w78 y+2") " Right",        "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; 75
       this.Ctl.AQI     := this.AddTextCtl(fs("w43 x+0 yp+12") " Right",  "---",        fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; 34 same row
@@ -257,7 +257,7 @@ class Weather {
          {al: "Left",  w: "auto", gap: fs(12)},   ; precip icon
          {al: "Right", w: "auto", gap: fs(3)},    ; wind speed
          {al: "Left",  w: "auto"}])               ; wind unit
-      this.Ctl.updated := this.AddTextCtl(fs("wp y+8"),,                                fs("s8")  " c7F849C", "Segoe UI")  ; overlay1
+      this.Ctl.updated := this.AddTextCtl(fs("wp y+8"),,                                fs("s9")  " c7F849C", "Segoe UI")  ; overlay1
       this.ActiveIcon := ""
       this.Ctl.Icon    := g.AddPicture(fs("H96 W96 X175 Y0"))      ; Pretty up the window
       this.DropShadow(g.hWnd) ; also border
@@ -388,7 +388,7 @@ class Weather {
       ; This allows duplicate entries or just loc=.......
       If (FileExist(this.iniFile)) {
          this.Menu.Add("Manage Locations", (*) => LocationManager.Show())  ; Creates a new menu item.
-         this.Menu.SetIcon("Manage Locations", this.Assets "Location.Ico")
+         Try this.Menu.SetIcon("Manage Locations", this.Assets "Location.Ico")
          this.Menu.Add()
          maxLoc :=IniRead(this.iniFile, "Default", "Max Locations", 50)
          for idx,loc in this.ReadLocations(this.iniFile) {
@@ -410,7 +410,7 @@ class Weather {
 
       this.Menu.Add()
       this.Menu.Add("Edit Settings File", (*) => Run(this.iniFile))  ; Creates a new menu item.
-      this.Menu.SetIcon("Edit Settings File", this.Assets "Settings.Ico")
+      Try this.Menu.SetIcon("Edit Settings File", this.Assets "Settings.Ico")
 
       mn := "Always On Top"
       this.Menu.Add(mn, ToggleOnTop)  ; Creates a new menu item.
@@ -424,7 +424,7 @@ class Weather {
 
       this.Menu.Add()
       this.Menu.Add("Exit", (*) => ExitApp())
-      this.Menu.SetIcon("Exit", this.Assets "Exit.Ico")
+      Try this.Menu.SetIcon("Exit", this.Assets "Exit.Ico")
       ToggleOnTop(*) {
          this.OnTop := !this.OnTop
          IniWrite(this.OnTop, this.iniFile, A_ComputerName, "OnTop")

@@ -1,5 +1,4 @@
-; https://claude.ai/chat/77b088a4-09e4-4607-ba12-2d8fc255a1be
-; Tom Wilkason
+; Tom Wilkason with help from claude
 ; Direct Write handler for text widgets
 #Requires AutoHotkey v2.1-
 #DllLoad "ole32.dll"

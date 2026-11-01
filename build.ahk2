@@ -3,6 +3,7 @@
 SetWorkingDir(A_ScriptDir)
 
 exe := "WeatherWidget.exe"
+zip := "WeatherWidget.zip"
 wasRunning := false
 
 if (pid := ProcessExist(exe)) {
@@ -14,6 +15,11 @@ if (pid := ProcessExist(exe)) {
 }
 
 RunWait('"C:\Apps\AHK\V2\Ahk2Exe.exe" /in "WeatherWidget.ahk2" /icon "Assets/Partly Cloudy.ico" /base "C:\Apps\AHK\V2\AutoHotkey64.exe" /out "' exe '"')
+
+if FileExist(zip)
+   FileDelete(zip)
+RunWait('7z a -tzip "' zip '" "' exe '" "Assets/*.ico"',, "Hide")
+
 Sleep(200)
 if wasRunning
    Run(exe)
