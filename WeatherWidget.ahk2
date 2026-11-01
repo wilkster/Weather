@@ -13,6 +13,7 @@ TODO
 - seems to stay on all desktops, this is desired
 - Don't make static so would could have multiple instances at once for different locations
   Pass in location name into __Init
+- Migrate to grid D2D and use that vs hand tuned spacing I have now.
 - Hourly air quality data? Wider GUI
 - Consider differnt layouts like MAC OS weather widget
 - https://github.com/Makin-Things/weather-icons (SVG, some are animated)
@@ -725,7 +726,7 @@ class Weather {
          else if (snowWater >= psum * 0.5)
             prec := this.lpad(round(ssum,1),5) (this.mks ? " ㎝ ❄" : " in❄")
          else
-            prec := this.lpad(round(psum,1),5) (this.mks ? " ㎜🌨" : " in🌨")
+            prec := this.lpad(round(psum,1),5) (this.mks ? " ㎜🌧️" : " in🌧️")
          out       .= dayOfWeek (this.useD2D ? "`t" : "") lo "° to" hi "°" wc prec this.lpad(ws,4) wsu "`n"
          ; out       .= dayOfWeek (this.useD2D ? "`t" : "") lo "° to" hi "° " wc (IsNumber(pop) ? this.lpad(pop,4) : "--") "%" this.lpad(ws,4) wsu "`n"
       }
@@ -1239,11 +1240,13 @@ class LocationManager {
 
    static Remove(*) {
       i := this.LB.Value
+      place := this.LB.Text
       if !i
          return
       this.Items.RemoveAt(i)
       this.Save()
       this.RefreshListBox(Min(i, this.Items.Length))
+      IniDelete(Weather.iniFile, place)
    }
    static Select(*) {
       i := this.LB.Value
