@@ -13,7 +13,6 @@ TODO
 - seems to stay on all desktops, this is desired
 - Don't make static so would could have multiple instances at once for different locations
   Pass in location name into __Init
-- Hourly air quality data? Wider GUI
 - Consider differnt layouts like MAC OS weather widget
 - https://github.com/Makin-Things/weather-icons (SVG, some are animated)
 */
@@ -151,6 +150,7 @@ class Weather {
       this.iniFile := A_ScriptDir "\WeatherWidget.ini"
       this.NeedGeo := 1
       this.OnTop := 0
+      this.hourlyAQI := Map()
 
       ; Set default locations
       this.Name := IniRead(this.iniFile, A_ComputerName, "Loc", this.Name)
@@ -239,6 +239,7 @@ class Weather {
          {al: "Left",  w: "auto", gap: fs(10)},   ; day / night icon
          {al: "Right", w: "auto", gap: fs(4)},    ; temp
          {al: "Left",  w: "auto", gap: fs(12)},   ; condition icon
+         {al: "Right", w: "auto", gap: fs(10)},   ; aqi
          {al: "Right", w: "auto", gap: fs(10)},   ; precip %
          {al: "Right", w: "auto", gap: fs(4)},    ; wind speed
          {al: "Left",  w: "auto", gap: fs(4)},    ; wind unit
@@ -553,8 +554,8 @@ class Weather {
    Static RefreshData(*) {
       SendMessage(0x000B, 0, 0, , this.Gui.hwnd)   ; WM_SETREDRAW , helps with flicker
       Try {
-         ok := this.UpdateWeather()
-         ok := this.UpdateAirQuality() && ok
+         ok := this.UpdateAirQuality()
+         ok := this.UpdateWeather() && ok
       } finally {
          SendMessage(0x000B, 1, 0, , this.Gui.hwnd)   ; WM_SETREDRAW on
       }
@@ -614,10 +615,11 @@ class Weather {
     *        Note, the color coding breakpoints would be differnt
     */
    Static UpdateAirQuality(*) {
+      this.hourlyAQI := Map()
       If (!this.EnsureGeo())
          Return false
-      ; TODO - utilize hourly AQI data: add "&hourly=us_aqi" to the URL
-      url := "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" this.Lat "&longitude=" this.Lon "&current=us_aqi"
+      url := "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" this.Lat "&longitude=" this.Lon
+         . "&current=us_aqi&hourly=us_aqi&forecast_hours=" this.maxRows * this.hourIncrement + 2 "&timezone=auto"
       Return this.Query(url, this.RenderAQI.Bind(this))
    }
 
@@ -651,7 +653,14 @@ class Weather {
     * @param json Query Results
     */
    Static RenderAQI(json) {
-      cur := this.Section(json, "current")
+      cur   := this.Section(json, "current")
+      hrs   := this.Section(json, "hourly")
+      times := this.List(hrs, "time")
+      haqi  := this.List(hrs, "us_aqi")
+      ; Save this for weather render stage, keyed by hour so it aligns with the weather data
+      this.hourlyAQI := Map()
+      Loop times.Length
+         this.hourlyAQI[times[A_Index]] := haqi.Has(A_Index) ? haqi[A_Index] : ""
       v := this.Value(cur, "us_aqi")
       If (!IsNumber(v)) {
          this.Ctl.AQI.Text := "---"
@@ -717,7 +726,12 @@ class Weather {
       Loop this.forecastDays {
          i := A_Index
          if i == 1
-            rows.Push([{t: "Day", al: "Left"}, {t: "――Temp――", span: 4, al: "Center"}, {t: "Prec", span: 3, al: "Center"}, {t: "Wind", span: 2, al: "Center"}])
+            rows.Push([
+               {t: "Day", al: "Left"}, 
+               {t: "―Temp―", span: 4, al: "Center"}, 
+               {t: "―Prec―", span: 3, al: "Center"}, 
+               {t: "Wind", span: 2, al: "Center"}
+            ])
          psum := Number(this.List(day, "precipitation_sum")[i])
          ssum := Number(this.List(day, "snowfall_sum")[i])
          if ((psum + ssum) < .01)
@@ -754,6 +768,7 @@ class Weather {
          t  := temps[i]
          p  := pops[i]
          w  := winds[i]
+         a  := this.hourlyAQI.Get(times[i], "")   ; from AQI query, matched by hour
          d  := Compass(dirs[i])
          wcn := Integer(codes[i])
          if (wcn = 0 and !dn)
@@ -761,9 +776,17 @@ class Weather {
          else
             wc := this.emoji.get(wcn, "🌈")
          if A_Index == 1
-            rows.Push([{t: "Time", span: 2, al: "Center"}, {t: "Temp", span: 2, al: "Center"}, {t: "Prec", al: "Center"}, {t: "Wind", span: 3, al: "Center"}])
-         rows.Push([this.Hour12(hr), daynight(dn)
+            rows.Push([
+               {t: "―Time―", span: 2, al: "Center"}, 
+               {t: "Temp", span: 2, al: "Center"}, 
+               {t: "AQI",  al: "Center"}, 
+               {t: "Prec", al: "Center"}, 
+               {t: "―Wind―", span: 3, al: "Center"}
+            ])
+         rows.Push(
+            [this.Hour12(hr), daynight(dn)
             , IsNumber(t) ? this.fixfix(Round(t) "°") : "--", wc
+            , isNumber(a) ? a : "--"
             , IsNumber(p) ? p "%" : "--"
             , IsNumber(w) ? Round(w) : "--", Trim(wsu), d])
          i += this.hourIncrement
