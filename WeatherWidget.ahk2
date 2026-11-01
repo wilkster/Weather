@@ -151,6 +151,7 @@ class Weather {
       this.NeedGeo := 1
       this.OnTop := 0
       this.hourlyAQI := Map()
+      this.Launched := A_TickCount
 
       ; Set default locations
       this.Name := IniRead(this.iniFile, A_ComputerName, "Loc", this.Name)
@@ -701,7 +702,9 @@ class Weather {
       If (this.Gui.BackColor != bgc) {
          this.Gui.BackColor := bgc
       }
-
+      ;-----------------------------------------------------------------------
+      ; Today
+      ;-----------------------------------------------------------------------
       this.Ctl.loc.Text  := this.Name
       this.Ctl.temp.Text := tf "°"
       wsu                := this.mks ? " kmh " : " mph "
@@ -718,7 +721,6 @@ class Weather {
          . "Feels " Round(this.Value(cur, "apparent_temperature")) "°"
          . "   Hum " Round(this.Value(cur, "relative_humidity_2m")) "%"
          . "   Wind " Round(this.Value(cur, "wind_speed_10m")) . wsu . d
-      ; Today
       ;-----------------------------------------------------------------------
       ; Daily Forecast
       ;-----------------------------------------------------------------------
@@ -741,12 +743,13 @@ class Weather {
             pVal := Round(ssum, 1), pUnit := this.mks ? "cm" : "in", pIcon := "❄"
          else
             pVal := Round(psum, 1), pUnit := this.mks ? "mm" : "in", pIcon := "🌧️"
-         dow := i == 1 ? "Today" : FormatTime(Trim(StrReplace(this.List(day, "time")[i], '-'), '"'), "ddd")
-         rows.Push([dow
+         rows.Push([
+            i == 1 ? "Today" : FormatTime(Trim(StrReplace(this.List(day, "time")[i], '-'), '"'), "ddd")
             , this.fixfix(Round(this.List(day, "temperature_2m_min")[i]) "°"), "🠊"
             , this.fixfix(Round(this.List(day, "temperature_2m_max")[i]) "°")
             , this.emoji.get(Integer(this.List(day, "weather_code")[i]), "🌈")
-            , pVal, pUnit, pIcon, Round(this.List(day, "wind_speed_10m_max")[i]), Trim(wsu)])
+            , pVal, pUnit, pIcon, Round(this.List(day, "wind_speed_10m_max")[i]), Trim(wsu)
+         ])
       }
       this.Ctl.daily.SetRows(rows)
       ;-----------------------------------------------------------------------
@@ -784,12 +787,13 @@ class Weather {
                {t: "Prec", al: "Center", c:hc}, 
                {t: "―Wind―", span: 3, al: "Center", c:hc}
             ])
-         rows.Push(
-            [this.Hour12(hr), daynight(dn)
+         rows.Push([
+            this.Hour12(hr), daynight(dn)
             , IsNumber(t) ? this.fixfix(Round(t) "°") : "--", wc
             , IsNumber(a) ? {t: a, c: this.AqiColor(a)} : "--"
             , IsNumber(p) ? p "%" : "--"
-            , IsNumber(w) ? Round(w) : "--", Trim(wsu), d])
+            , IsNumber(w) ? Round(w) : "--", Trim(wsu), d
+         ])
          i += this.hourIncrement
       }
       this.Ctl.hourly.SetRows(rows)
@@ -808,14 +812,15 @@ class Weather {
             if (FileExist(AltIcon))
                Icon := AltIcon
          }
-         If (FileExist(Icon)) {
-            If (Icon != this.ActiveIcon) {
+         ; Only change if different
+         If (Icon != this.ActiveIcon) {
+            If (FileExist(Icon)) {
                TraySetIcon(Icon)
                this.Ctl.Icon.Value := Icon
                this.ActiveIcon := Icon
+            } Else {
+               OutputDebug("Missing expected Icon File:" Icon)
             }
-         } Else {
-            OutputDebug("Missing expected Icon File:" Icon)
          }
          A_IconTip := this.Name "`n" (Round(this.Value(cur, "temperature_2m")) . "° - " . this.Codes[code])
       }
@@ -1048,10 +1053,11 @@ SetupEventMonitoring() {
             OutputDebug("WeatherWidget: Resume from Suspension")
          Case PBT_POWERSETTINGCHANGE:
             ; POWERBROADCAST_SETTING: GUID (16) + DataLength (4) + Data
-            ; Data: 0 = off, 1 = on, 2 = dimmed
-            If (NumGet(lParam, 20, "UChar") = 1) {
+            ; Data: 0 = off, 1 = on, 2 = dimmed, ignore initial trigger at launch
+            If (A_TickCount > (Weather.Launched + 60000) AND NumGet(lParam, 20, "UChar") = 1) {
                Weather.RefresMe()
                SetTimer(Weather.cbUpdateData, -5000)
+               OutputDebug("WeatherWidget: PBT_POWERSETTINGCHANGE")
             }
 
          Default:
