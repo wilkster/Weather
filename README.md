@@ -25,13 +25,13 @@ No API keys or accounts are needed. Weather and air quality come from [Open-Mete
   
 ### Hourly forecast
 
-- Time, day/night marker, temperature, weather emoji, chance of precipitation, wind speed and direction
+- Time, day/night marker, temperature, weather emoji, Air Quality, chance of precipitation, wind speed and direction
 - Starts at the next hour, with configurable row count and hour spacing (including 0 rows)
 - Hourly increment and total rows show are user configurable (0 to 15)
 
 ### Daily forecast
 
-- Weekday, low and high temperature, weather emoji, max precipitation chance, and max wind
+- Weekday, low and high temperature, weather emoji,  precipitation amount (snow or rain indicated), and max wind
 - 0 to 16 days, configurable
 
 ### Window and display
