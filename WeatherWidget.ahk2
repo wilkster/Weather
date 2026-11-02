@@ -31,9 +31,11 @@ class Weather {
    Static forecastDays  := 2
    Static hourIncrement := 3
    Static maxRows       := 8
+   Static OnTop         := 0
    Static mks           := 0
    Static fontScaleFactor := 1
-   Static Assets :=     A_ScriptDir . "\Assets\"
+   Static ColorCodeDaily := 1
+   Static Assets        := A_ScriptDir . "\Assets\"
   /*
       WMO Weather Codes Reference
       Code	      Description
@@ -149,7 +151,6 @@ class Weather {
       this.Menu := Menu()
       this.iniFile := A_ScriptDir "\WeatherWidget.ini"
       this.NeedGeo := 1
-      this.OnTop := 0
       this.hourlyAQI := Map()
       this.Launched := A_TickCount
 
@@ -177,6 +178,7 @@ class Weather {
       this.hourIncrement   := Integer(IniRead(this.iniFile, A_ComputerName, "Hours Increment", this.hourIncrement))
       this.maxRows         := Integer(IniRead(this.iniFile, A_ComputerName, "Max Rows", this.maxRows))
       this.fontScaleFactor := Number(IniRead(this.iniFile, A_ComputerName, "FontScaling", this.fontScaleFactor))
+      this.ColorCodeDaily  := IniRead(this.iniFile, A_ComputerName, "Color Code Daily", this.ColorCodeDaily)
 
       ; Build the GUI, should be DPI aware, composting helps with flicker
       X := IniRead(this.iniFile, A_ComputerName, "X", 0)
@@ -418,10 +420,15 @@ class Weather {
       this.Menu.Add(mn, ToggleOnTop)  ; Creates a new menu item.
       If (this.OnTop)
          this.Menu.Check(mn)
-      mn := "Metric Units"
 
+      mn := "Metric Units"
       this.Menu.Add(mn, ToggleMKS)  ; Creates a new menu item.
       if (this.mks)
+         this.Menu.Check(mn)
+
+      mn := "Color Code Temperature"
+      this.Menu.Add(mn, ToggleTemp)  ; Creates a new menu item.
+      if (this.ColorCodeDaily)
          this.Menu.Check(mn)
 
       this.Menu.Add()
@@ -435,6 +442,11 @@ class Weather {
       ToggleMKS(*) {
          this.mks := !this.mks
          IniWrite(this.mks, this.iniFile, A_ComputerName, "MKS")
+         this.RefreshData()
+      }
+      ToggleTemp(*) {
+         this.ColorCodeDaily := !this.ColorCodeDaily
+         IniWrite(this.ColorCodeDaily, this.iniFile, A_ComputerName, "Color Code Daily")
          this.RefreshData()
       }
    }
@@ -513,6 +525,7 @@ class Weather {
       IniWrite(this.Name, this.iniFile, A_ComputerName, "Loc")
       IniWrite(X, this.iniFile, A_ComputerName, "X")
       IniWrite(Y, this.iniFile, A_ComputerName, "Y")
+      this.writeIfBlank(this.ColorCodeDaily, A_ComputerName, "Color Code Daily")
       this.writeIfBlank(this.Interval, A_ComputerName, "Refresh Minutes")
       this.writeIfBlank(this.forecastDays, A_ComputerName, "Forecast Days")
       this.writeIfBlank(this.fontScaleFactor, A_ComputerName, "FontScaling") ;
@@ -727,7 +740,16 @@ class Weather {
       ; Daily Forecast
       ;-----------------------------------------------------------------------
       rows := []
-      hc := 0xFFFFFF
+      hc := 0xFFFFFF ; Header Color
+      tc := this.Ctl.daily._fg ; Normal Text Color (same as default)
+      cc := this.ColorCodeDaily
+      lows := [], highs := []
+      Loop this.forecastDays {
+         lows.Push(Round(this.List(day, "temperature_2m_min")[A_Index]))
+         highs.Push(Round(this.List(day, "temperature_2m_max")[A_Index]))
+      }
+      loMin := Min(lows*), loMax := Max(lows*)
+      hiMin := Min(highs*), hiMax := Max(highs*)
       Loop this.forecastDays {
          i := A_Index
          if i == 1
@@ -747,8 +769,9 @@ class Weather {
             pVal := Round(psum, 1), pUnit := this.mks ? "mm" : "in", pIcon := "🌧️"
          rows.Push([
             i == 1 ? "Today" : FormatTime(Trim(StrReplace(this.List(day, "time")[i], '-'), '"'), "ddd")
-            , this.fixfix(Round(this.List(day, "temperature_2m_min")[i]) "°"), "🠊"
-            , this.fixfix(Round(this.List(day, "temperature_2m_max")[i]) "°")
+            , { t: this.fixfix(lows[i] "°"), c: cc ? TempColor(lows[i], loMin, loMax) : tc }
+            , "🠊"
+            , { t: this.fixfix(highs[i] "°"), c: cc ? TempColor(highs[i], hiMin, hiMax) : tc }
             , this.emoji.get(Integer(this.List(day, "weather_code")[i]), "🌈")
             , pVal, pUnit, pIcon, Round(this.List(day, "wind_speed_10m_max")[i]), Trim(wsu)
          ])
@@ -766,7 +789,14 @@ class Weather {
       dns   := this.List(hrs, "is_day")
       RegExMatch(times[1], "T(\d+)", &m)
       h0    := Integer(m[1])      ; clock hour of array element 1
-      i     := 2                  ; element 2 = next hour
+      ; Get the temperature range
+      hrArray := []
+      Loop temps.length {
+         t := IsNumber(temps[A_Index]) ? Round(temps[A_Index]) : 0 ; if every 0 will through off range
+         hrArray.push(t)
+      }
+      loHr := Min(hrArray*), hiHr := Max(hrArray*)
+      i := 2
       rows := []
       while (A_Index <= this.maxRows && i <= temps.Length) {
          hr := Mod(h0 + i - 1, 24)   ; clock hour for this element
@@ -791,7 +821,8 @@ class Weather {
             ])
          rows.Push([
             this.Hour12(hr), daynight(dn)
-            , IsNumber(t) ? this.fixfix(Round(t) "°") : "--", wc
+            , { t: (IsNumber(t) ? this.fixfix(Round(t) "°") : "--"), c: cc ? TempColor(Round(t), loHr, hiHr) : tc }
+            , wc
             , IsNumber(a) ? {t: a, c: this.AqiColor(a)} : "--"
             , IsNumber(p) ? p "%" : "--"
             , IsNumber(w) ? Round(w) : "--", Trim(wsu), d
@@ -832,6 +863,16 @@ class Weather {
          return ["🡓","🡗N","🡗","🡗E","🡐","🡔E","🡔","🡔S","🡑","S🡕","🡕","W🡕","🡒","W🡖","🡖","N🡖"][Mod(Round(deg / 22.5), 16) + 1]
       }
       static daynight(dn) => !IsNumber(dn) ? "?" : dn ? "🌞" : "🌙"
+      Static TempColor(v, lo, hi) {
+         Static stops := [0x4A90FF, 0x3CCBC4, 0xFFD23F, 0xFF3B30]
+         t     := hi > lo ? (v - lo) * 768 // (hi - lo) : 384   ; 0..768, three 256-wide segments
+         seg   := Min(t // 256, 2), f := t - seg * 256
+         a     := stops[seg + 1],   b := stops[seg + 2]
+         r     := ((a >> 16 & 255) * (256 - f) + (b >> 16 & 255) * f) >> 8
+         g     := ((a >> 8 & 255) * (256 - f) + (b >> 8 & 255) * f) >> 8
+         bl    := ((a & 255) * (256 - f) + (b & 255) * f) >> 8
+         Return (r << 16) | (g << 8) | bl
+      }
    }
    Static Dpi()               => DllCall("GetDpiForWindow", "Ptr", Weather.Gui.Hwnd, "UInt")
    static Section(json, name) => RegExMatch(json, '"' name '":\{([^}]*)\}', &m) ? m[1] : ""
