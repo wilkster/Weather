@@ -260,8 +260,10 @@ class Weather {
       this.Ctl.updated := this.AddTextCtl(fs("wp y+8"),,                                fs("s9")  " c7F849C", "Segoe UI")  ; overlay1
       this.ActiveIcon := ""
       this.Ctl.Icon    := g.AddPicture(fs("H96 W96 X175 Y0"))      ; Pretty up the window
-      this.DropShadow(g.hWnd) ; also border
-      this.Round11Corners(g.hWnd, 3) ; use slightly smaller corners, lowdpi less clipping on corners
+      if (this.dpi() > 96)
+         this.DropShadow(g.hWnd) ; also border
+      else
+         this.Round11Corners(g.hWnd, 3) ; use slightly smaller corners, lowdpi less clipping on corners, breaks drop shadows
 
       ; Hand mouse drag/tray click/RMB Menu
       g.OnEvent("ContextMenu", (*) => this.ShowRMB())
@@ -862,14 +864,14 @@ class Weather {
    /**
     * Give the window a drop shadow, since no caption it won't do it by default
     * Also gives it the standard windows 11 drop shadow
+    * Doesn't work on layered windows
     */
    Static DropShadow(hwnd) {
-      ; Need to support border activation and round corners
-      DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 2, "Int*", 2, "UInt", 4)   ; DWMWA_NCRENDERING_POLICY = DWMNCRP_ENABLED
-      NumPut("Int", 1, "Int", 1, "Int", 1, "Int", 1, mar := Buffer(16, 0))   ; left, right, top, bottom
+      policy := 2   ; DWMNCRP_ENABLED
+      DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 2, "Int*", &policy, "UInt", 4)
+      mar := Buffer(16, 0)
+      NumPut("Int", 1, "Int", 1, "Int", 1, "Int", 1, mar)
       DllCall("dwmapi\DwmExtendFrameIntoClientArea", "Ptr", hwnd, "Ptr", mar)
-      ; ; DWMWA_BORDER_COLOR = 34, COLORREF is 0x00BBGGRR
-      ; DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "UInt", 34, "UInt*", 0x808080, "UInt", 4)  
    }
 
    /**
