@@ -86,6 +86,7 @@ No API keys or accounts are needed. Weather and air quality come from [Open-Mete
 | **Edit Settings File** | Opens `WeatherWidget.ini` in your default editor |
 | **Always On Top** | Toggle keeping the widget above other windows |
 | **Metric Units** | Toggle °C / km/h versus °F / mph |
+| **Color Code Temperature** | Show high/low for the column in relative colors |
 | **Exit** | Close the widget (saves position first) |
 
 If the INI file does not exist yet, the menu offers **Refresh now** in place of the location list.
