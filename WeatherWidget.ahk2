@@ -82,6 +82,7 @@ class Weather {
       86, "Heavy snow showers",
       95, "Thunderstorm",
       96, "Thunderstorm, hail",
+      97, "Thunderstorm",
       99, "Heavy Thunderstorm, hail"
    )
    Static Icons := Map(
@@ -112,6 +113,7 @@ class Weather {
       86, "Snow",               ;"Heavy snow showers",
       95, "Thunderstorm",       ;"Thunderstorm",
       96, "Thunderstorm",       ;"Thunderstorm, hail",
+      97, "Thunderstorm",       ;"Heavy Thunderstorm",
       99, "Thunderstorm"        ;"Thunderstorm, hail"
    )
    Static emoji := map(
@@ -142,6 +144,7 @@ class Weather {
       86, "⛄",        ;"Heavy snow showers",
       95, "🌩️",        ;"Thunderstorm",
       96, "⛈️",        ;"Thunderstorm, hail",
+      97, "🌩️",        ;"Heavy Thunderstorm",
       99, "⛈️"         ;"Thunderstorm, hail"
    )
    /**
@@ -155,15 +158,21 @@ class Weather {
       this.Launched := A_TickCount
 
       ; Set default locations
-      this.Name := IniRead(this.iniFile, A_ComputerName, "Loc", this.Name)
+      this.Name := IniRead(this.iniFile, A_ComputerName, "Loc", "")
       If (obj := this.GeocodeName(this.Name)) {
          this.Lat     := obj.lat
          this.Lon     := obj.lon
          this.CC      := obj.CC
          ; Default was initially used
+         ; name is long name from geocide
+         ; place is term user used for search and will be the tag
          If (this.Name != obj.Place) {
             IniWrite(obj.Place, this.iniFile, A_ComputerName, "Loc")
             IniWrite(obj.Place, this.iniFile, "Locations")
+            IniWrite(obj.CC, this.iniFile, obj.Place, "CC")
+            IniWrite(obj.Lat, this.iniFile, obj.Place, "Lat")
+            IniWrite(obj.Lon, this.iniFile, obj.Place, "Lon")
+            IniWrite(obj.Name, this.iniFile, obj.Place, "FullName")
          }
          this.Name    := obj.Place
          this.NeedGeo := 0
@@ -185,9 +194,6 @@ class Weather {
       Y := IniRead(this.iniFile, A_ComputerName, "Y", 0)
 
       g := this.BuildGUI(X?, Y?)
-
-      OnMessage(0x201, this.Drag.bind(this))
-      OnMessage(0x232, this.SnapToWorkArea.bind(this))   ; WM_EXITSIZEMOVE
       OnMessage(0x404, this.TrayMessage.Bind(this))
       this.cbUpdateData := this.RefreshData.bind(this)
       If (ComObject("{DCB00C01-570F-4A9B-8D69-199FDBA5723B}").IsConnectedToInternet) {
@@ -218,7 +224,7 @@ class Weather {
          ym adds a margin
          r8 means 8 rows
       */
-      this.Ctl.loc     := this.AddTextCtl(fs("w270"),                    this.Name,    fs("s11 Bold")  " cA6ADC8",      "Segoe UI")  ; Los Angeles
+      this.Ctl.loc     := this.AddTextCtl(fs("w270"),                    this.Name,    fs("s11 Bold") " cA6ADC8", "Segoe UI")  ; Los Angeles
 
       this.Ctl.temp    := this.AddTextCtl(fs("w78 y+2") " Right",        "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; 75
       this.Ctl.AQI     := this.AddTextCtl(fs("w43 x+0 yp+12") " Right",  "---",        fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; 34 same row
@@ -274,7 +280,7 @@ class Weather {
       g.Show("NoActivate Hide AutoSize")
       this.gui.opt(this.OnTop ? "+AlwaysOnTop" : "-AlwaysOnTop")
       g.Show("NoActivate x" X " y" Y)
-      this.SnapToWorkArea(0, 0, 0, g.Hwnd) ; in case it was off the screen
+      this.SnapToWorkArea(g, 0, 0, 0) ; in case it was off the screen
 
       ; in Init, after the controls are created
       this.Ctl.daily.GetPos(,,, &h1)
@@ -284,6 +290,8 @@ class Weather {
       ; In case days/maxRows was zerod out, squash the title height
       if !(this.forecastDays && this.maxRows) 
          this.ApplyRowCounts()
+      g.OnMessage(0x201, this.Drag.bind(this))
+      g.OnMessage(0x232, this.SnapToWorkArea.bind(this))   ; WM_EXITSIZEMOVE
 
       Return g
 
@@ -539,29 +547,25 @@ class Weather {
    /**
     * Drag the GUI on a message since we don't have a caption
     */
-   static Drag(wParam, lParam, msg, hwnd) {
-      If (hwnd = this.Gui.Hwnd) {
-         DllCall("ReleaseCapture")
-         PostMessage(0xA1, 2, , , this.Gui)   ; WM_NCLBUTTONDOWN, HTCAPTION
-      }
+   static Drag(GuiOrCtrlObj, wParam, lParam, msg) {
+      DllCall("ReleaseCapture")
+      PostMessage(0xA1, 2, , , GuiOrCtrlObj.hWnd)   ; WM_NCLBUTTONDOWN, HTCAPTION
    }
    /**
     * Snap the GUI so it is fully enclosed by a monitor
     */
-   Static SnapToWorkArea(wParam, lParam, msg, hwnd) {
-      If (hwnd != this.Gui.Hwnd)
-         Return
-      hMon := DllCall("MonitorFromWindow", "Ptr", hwnd, "UInt", 2, "Ptr")   ; MONITOR_DEFAULTTONEAREST
+   Static SnapToWorkArea(GuiOrCtrlObj, wParam, lParam, msg) {
+      hMon := DllCall("MonitorFromWindow", "Ptr", GuiOrCtrlObj.hwnd, "UInt", 2, "Ptr")   ; MONITOR_DEFAULTTONEAREST
       mi := Buffer(40, 0)
       NumPut("UInt", 40, mi)                                                 ; MONITORINFO.cbSize
       DllCall("GetMonitorInfo", "Ptr", hMon, "Ptr", mi)
       L := NumGet(mi, 20, "Int"), T := NumGet(mi, 24, "Int")                 ; rcWork
       R := NumGet(mi, 28, "Int"), B := NumGet(mi, 32, "Int")
-      WinGetPos(&x, &y, &w, &h, this.Gui)
+      WinGetPos(&x, &y, &w, &h, GuiOrCtrlObj)
       nx := Max(L, Min(x, R - w))
       ny := Max(T, Min(y, B - h))
       If (nx != x || ny != y)
-         WinMove(nx, ny, , , this.Gui)
+         WinMove(nx, ny, , , GuiOrCtrlObj)
    }
    /**
     * Refresh the weather and Air Quality data
@@ -631,7 +635,6 @@ class Weather {
     *        Note, the color coding breakpoints would be differnt
     */
    Static UpdateAirQuality(*) {
-      this.hourlyAQI := Map()
       If (!this.EnsureGeo())
          Return false
       url := "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" this.Lat "&longitude=" this.Lon
@@ -655,9 +658,9 @@ class Weather {
          pu := "inch"
       }
       url := "https://api.open-meteo.com/v1/forecast?latitude=" this.Lat "&longitude=" this.Lon
-         . "&current=weather_code,temperature_2m,wind_speed_10m,wind_direction_10m,apparent_temperature,relative_humidity_2m,is_day"
-         . "&hourly=weather_code,temperature_2m,precipitation_probability,wind_speed_10m,wind_direction_10m,is_day"
-         . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset"
+         . "&current=weather_code,temperature_2m,wind_gusts_10m,wind_direction_10m,apparent_temperature,relative_humidity_2m,is_day"
+         . "&hourly=weather_code,temperature_2m,precipitation_probability,wind_gusts_10m,wind_direction_10m,is_day"
+         . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,precipitation_probability_max,wind_gusts_10m_max,sunrise,sunset"
          . "&precipitation_unit=" pu 
          . "&temperature_unit=" tu "&wind_speed_unit=" ws "&forecast_days=" max(this.forecastDays,1)
          . "&forecast_hours=" this.maxRows * this.hourIncrement + 2 "&timezone=auto"
@@ -722,7 +725,7 @@ class Weather {
       ;-----------------------------------------------------------------------
       this.Ctl.loc.Text  := this.Name
       this.Ctl.temp.Text := tf "°"
-      wsu                := this.mks ? " kmh " : " mph "
+      wsu                := this.mks ? " km/h " : " mph "
       sr                 := "☀↑  " StrLower(FormatTime(RegExReplace(this.List(day, "sunrise")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
       ss                 := "🌙↓  " StrLower(FormatTime(RegExReplace(this.List(day, "sunset")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
       this.Ctl.srss.Text := sr . "  " ss ; . "       " this.MoonPhase()
@@ -735,55 +738,59 @@ class Weather {
       this.Ctl.detail.Text := (tf < cold ? "❄ " : tf > hot ? "🌡️ " : "") 
          . "Feels " Round(this.Value(cur, "apparent_temperature")) "°"
          . "   Hum " Round(this.Value(cur, "relative_humidity_2m")) "%"
-         . "   Wind " Round(this.Value(cur, "wind_speed_10m")) . wsu . d
+         . "   Wind " Round(this.Value(cur, "wind_gusts_10m")) . wsu . d
       ;-----------------------------------------------------------------------
       ; Daily Forecast
       ;-----------------------------------------------------------------------
-      rows := []
       hc := 0xFFFFFF ; Header Color
       tc := this.Ctl.daily._fg ; Normal Text Color (same as default)
       cc := this.ColorCodeDaily
-      lows := [], highs := []
-      Loop this.forecastDays {
-         lows.Push(Round(this.List(day, "temperature_2m_min")[A_Index]))
-         highs.Push(Round(this.List(day, "temperature_2m_max")[A_Index]))
-      }
-      loMin := Min(lows*), loMax := Max(lows*)
-      hiMin := Min(highs*), hiMax := Max(highs*)
-      Loop this.forecastDays {
-         i := A_Index
-         if i == 1
+      If (this.forecastDays) {
+         rows := []
+         lows := [], highs := []
+         Loop this.forecastDays {
+            lows.Push(Round(this.List(day, "temperature_2m_min")[A_Index]))
+            highs.Push(Round(this.List(day, "temperature_2m_max")[A_Index]))
+         }
+         loMin := Min(lows*), loMax := Max(lows*)
+         hiMin := Min(highs*), hiMax := Max(highs*)
+         ; oMin := Min(loMin, hiMin), oMax := Max(loMax, hiMax)
+         Loop this.forecastDays {
+            i := A_Index
+            If i == 1
+               rows.Push([
+                 { t: "Day", al: "Left", c: hc }
+               , { t: "―Temp―", span: 4, al: "Center", c: hc }
+               , { t: "―Prec―", span: 3, al: "Center", c: hc }
+               , { t: "Wind", span: 2, al: "Center", c: hc }
+               ])
+            ; TODO - can use rain_sum or showers_sum vs precipitation_sum to determine showfall
+            psum := Number(this.List(day, "precipitation_sum")[i])
+            ssum := Number(this.List(day, "snowfall_sum")[i])
+            If ((psum + ssum) < 0.01)
+               pVal := Round(ssum, 1), pUnit := this.mks ? "mm" : "in", pIcon := ""
+            Else If ((this.mks ? ssum : ssum / 10) >= psum * 0.5)
+               pVal := Round(ssum, 1), pUnit := this.mks ? "cm" : "in", pIcon := "❄"
+            Else
+               pVal := Round(psum, 1), pUnit := this.mks ? "mm" : "in", pIcon := "🌧️"
             rows.Push([
-               {t: "Day", al: "Left", c:hc}, 
-               {t: "―Temp―", span: 4, al: "Center", c:hc}, 
-               {t: "―Prec―", span: 3, al: "Center", c:hc}, 
-               {t: "Wind", span: 2, al: "Center", c:hc}
+               i == 1 ? "Today" : FormatTime(Trim(StrReplace(this.List(day, "time")[i], '-'), '"'), "ddd")
+               , { t: this.fixfix(lows[i] "°"), c: cc ? TempColor(lows[i], loMin, loMax) : tc }
+               , "🠊"
+               , { t: this.fixfix(highs[i] "°"), c: cc ? TempColor(highs[i], hiMin, hiMax) : tc }
+               , this.emoji.get(Integer(this.List(day, "weather_code")[i]), "🌈")
+               , pVal, pUnit, pIcon, Round(this.List(day, "wind_gusts_10m_max")[i]), Trim(wsu)
             ])
-         psum := Number(this.List(day, "precipitation_sum")[i])
-         ssum := Number(this.List(day, "snowfall_sum")[i])
-         if ((psum + ssum) < .01)
-            pVal := Round(ssum, 1), pUnit := this.mks ? "mm" : "in", pIcon := ""
-         else if ((this.mks ? ssum : ssum / 10) >= psum * 0.5)
-            pVal := Round(ssum, 1), pUnit := this.mks ? "cm" : "in", pIcon := "❄"
-         else
-            pVal := Round(psum, 1), pUnit := this.mks ? "mm" : "in", pIcon := "🌧️"
-         rows.Push([
-            i == 1 ? "Today" : FormatTime(Trim(StrReplace(this.List(day, "time")[i], '-'), '"'), "ddd")
-            , { t: this.fixfix(lows[i] "°"), c: cc ? TempColor(lows[i], loMin, loMax) : tc }
-            , "🠊"
-            , { t: this.fixfix(highs[i] "°"), c: cc ? TempColor(highs[i], hiMin, hiMax) : tc }
-            , this.emoji.get(Integer(this.List(day, "weather_code")[i]), "🌈")
-            , pVal, pUnit, pIcon, Round(this.List(day, "wind_speed_10m_max")[i]), Trim(wsu)
-         ])
+         }
+         this.Ctl.daily.SetRows(rows)
       }
-      this.Ctl.daily.SetRows(rows)
       ;-----------------------------------------------------------------------
       ; Hourly data starts at the current hour (forecast_hours), not midnight
       ;-----------------------------------------------------------------------
       times := this.List(hrs, "time")
       temps := this.List(hrs, "temperature_2m")
       pops  := this.List(hrs, "precipitation_probability")
-      winds := this.List(hrs, "wind_speed_10m")
+      winds := this.List(hrs, "wind_gusts_10m")
       dirs  := this.List(hrs, "wind_direction_10m")
       codes := this.List(hrs, "weather_code")
       dns   := this.List(hrs, "is_day")
@@ -821,7 +828,7 @@ class Weather {
             ])
          rows.Push([
             this.Hour12(hr), daynight(dn)
-            , { t: (IsNumber(t) ? this.fixfix(Round(t) "°") : "--"), c: cc ? TempColor(Round(t), loHr, hiHr) : tc }
+            , { t: (IsNumber(t) ? this.fixfix(Round(t) "°") : "--"), c: cc && IsNumber(t) ? TempColor(Round(t), loHr, hiHr) : tc }
             , wc
             , IsNumber(a) ? {t: a, c: this.AqiColor(a)} : "--"
             , IsNumber(p) ? p "%" : "--"
@@ -965,11 +972,11 @@ class Weather {
          }
       }
       ; See if location is cached
-      If (lat := IniRead(this.iniFile, place, "Lat", 0)) {
-         lon := IniRead(this.iniFile, place, "Lon", 0)
-         CC  := IniRead(this.iniFile, place, "CC", "us")
+      lat := IniRead(this.iniFile, place, "Lat", "")
+      lon := IniRead(this.iniFile, place, "Lon", "")
+      CC  := IniRead(this.iniFile, place, "CC", "us")
+      if (IsNumber(lon) AND IsNumber(lat))
          return {place: place, lat: Round(lat,7), lon: Round(lon,7), name: place, CC: CC, cached:1}
-      }
       ; Query location data from openstreetmap
       url := "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&q=" UriEncode(place)
       try {
@@ -1298,7 +1305,6 @@ class LocationManager {
       ; Validate via URL
       If (obj := Weather.GeocodeName(place)) {
          ; Cache location to INI file
-         IniWrite(place, this.iniFile, A_ComputerName, "Loc")
          IniWrite(obj.CC, this.iniFile, place, "CC")
          IniWrite(obj.Lat, this.iniFile, place, "Lat")
          IniWrite(obj.Lon, this.iniFile, place, "Lon")
