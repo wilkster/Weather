@@ -224,13 +224,13 @@ class Weather {
          ym adds a margin
          r8 means 8 rows
       */
-      this.Ctl.loc     := this.AddTextCtl(fs("w270"),                    this.Name,    fs("s11 Bold") " cA6ADC8", "Segoe UI")  ; Los Angeles
+      this.Ctl.loc     := this.AddTextCtl(fs("w280"),                    this.Name,    fs("s11 Bold") " cA6ADC8", "Segoe UI")  ; Los Angeles
 
       this.Ctl.temp    := this.AddTextCtl(fs("w78 y+2") " Right",        "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; 75
       this.Ctl.AQI     := this.AddTextCtl(fs("w43 x+0 yp+12") " Right",  "---",        fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; 34 same row
       this.Ctl.AQIlab  := this.AddTextCtl(fs("w30 x+2 yp+13"),           "aqi",        fs("s9")  " cA6ADC8 Norm", "Segoe UI")  ; aqi same row
 
-      this.Ctl.hilo    := this.AddTextCtl(fs("w270 xm y+20"),            "Loading...", fs("s11") " cCDD6F4 Norm", "Segoe UI")  ; H/L temp
+      this.Ctl.hilo    := this.AddTextCtl(fs("w280 xm y+20"),            "Loading...", fs("s11") " cCDD6F4 Norm", "Segoe UI")  ; H/L temp
       this.Ctl.cond    := this.AddTextCtl("wp xp-8 yp Right",,                         fs("s11") " cCDD6F4 Bold", "Segoe UI")  ; Partly Cloudy on right
 
       this.Ctl.detail  := this.AddTextCtl(fs("wp xm y+8"),,                            fs("s11") " cc7cfeb Norm", "Segoe UI")  ; Feels like ...
@@ -242,16 +242,17 @@ class Weather {
       ; The grids take their row height from the GUI font in effect here (r<N> sizing), so match it to the grid font
       this.Gui.SetFont(fs("S10") " Norm", "Segoe UI")
       ; Column widths are measured from the text; only the gaps (DIPs, scaled with fs like everything else) are tuned
-      this.Ctl.hourly := this.Gui.AddD2DGrid(fs("w270 xm y+8") " r" (this.maxRows + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write grid for emojis
-      this.Ctl.hourly.SetColumns([
+      this.Ctl.hourly := this.Gui.AddD2DGrid(fs("w280 xm y+8") " r" (this.maxRows + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write grid for emojis
+      this.Ctl.hourly.SetColumns([ ; gap is after the entry
          {al: "Right", w: "auto", gap: fs(4)},    ; time
          {al: "Left",  w: "auto", gap: fs(10)},   ; day / night icon
          {al: "Right", w: "auto", gap: fs(4)},    ; temp
          {al: "Left",  w: "auto", gap: fs(12)},   ; condition icon
          {al: "Right", w: "auto", gap: fs(10)},   ; aqi
-         {al: "Right", w: "auto", gap: fs(10)},   ; precip %
-         {al: "Right", w: "auto", gap: fs(4)},    ; wind speed
-         {al: "Left",  w: "auto", gap: fs(4)},    ; wind unit
+         {al: "Right", w: "auto", gap: fs(12)},   ; precip %
+         {al: "Right", w: "auto", gap: fs(2)},    ; wind speed
+         {al: "Right", w: "auto", gap: fs(2)},    ; "-"
+         {al: "Right", w: "auto", gap: fs(8)},    ; wind speed gusts
          {al: "Left",  w: "auto"}])               ; wind direction
       this.Ctl.daily  := this.Gui.AddD2DGrid(fs("wp y+8") " r" (this.forecastDays + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write grid for emojis
       this.Ctl.daily.SetColumns([
@@ -263,8 +264,10 @@ class Weather {
          {al: "Right", w: "auto", gap: fs(3)},    ; precip amount
          {al: "Left",  w: "auto", gap: fs(2)},    ; precip unit
          {al: "Left",  w: "auto", gap: fs(12)},   ; precip icon
-         {al: "Right", w: "auto", gap: fs(3)},    ; wind speed
-         {al: "Left",  w: "auto"}])               ; wind unit
+         {al: "Right", w: "auto", gap: fs(2)},    ; wind speed
+         {al: "Right", w: "auto", gap: fs(2)},    ; "-"
+         {al: "Right", w: "auto", gap: fs(8)},    ; wind speed gusts
+         {al: "Left",  w: "auto"}])               ; wind direction
       this.Ctl.updated := this.AddTextCtl(fs("wp y+8"),,                                fs("s9")  " c7F849C", "Segoe UI")  ; overlay1
       this.ActiveIcon := ""
       this.Ctl.Icon    := g.AddPicture(fs("H96 W96 X175 Y0"))      ; Pretty up the window
@@ -272,7 +275,9 @@ class Weather {
          this.DropShadow(g.hWnd) ; also border
       else
          this.Round11Corners(g.hWnd, 3) ; use slightly smaller corners, lowdpi less clipping on corners, breaks drop shadows
-
+      ; Make the grid space with full width, looks better
+      this.Ctl.hourly.SetJustify()
+      this.Ctl.daily.SetJustify()
       ; Hand mouse drag/tray click/RMB Menu
       g.OnEvent("ContextMenu", (*) => this.ShowRMB())
 
@@ -579,8 +584,8 @@ class Weather {
       } finally {
          SendMessage(0x000B, 1, 0, , this.Gui.hwnd)   ; WM_SETREDRAW on
       }
-      Weather.RefresMe() ; needed for when widget is on a disabled screen, background doesn't always erase
-
+      ; Everything updated, now refresh all at once
+      this.RefresMe()
       SetTimer(this.cbUpdateData, ok ? this.Interval * 60000 : -60000)
       this.PruneMemory()
       OutputDebug("WeatherWidget: Updated Weather and Air Quality for " this.name)
@@ -609,7 +614,7 @@ class Weather {
    Static Query(url, renderer) {
       try {
          http := ComObject("WinHttp.WinHttpRequest.5.1")
-         http.SetTimeouts(5000, 5000, 10000, 10000)
+         http.SetTimeouts(3000, 3000, 8000, 8000)
          http.Open("GET", url, false)
          http.Send()
          if (http.Status != 200)
@@ -658,9 +663,9 @@ class Weather {
          pu := "inch"
       }
       url := "https://api.open-meteo.com/v1/forecast?latitude=" this.Lat "&longitude=" this.Lon
-         . "&current=weather_code,temperature_2m,wind_gusts_10m,wind_direction_10m,apparent_temperature,relative_humidity_2m,is_day"
-         . "&hourly=weather_code,temperature_2m,precipitation_probability,wind_gusts_10m,wind_direction_10m,is_day"
-         . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,precipitation_probability_max,wind_gusts_10m_max,sunrise,sunset"
+         . "&current=weather_code,temperature_2m,,wind_gusts_10m,wind_speed_10m,wind_direction_10m,apparent_temperature,relative_humidity_2m,is_day"
+         . "&hourly=weather_code,temperature_2m,precipitation_probability,wind_speed_10m,wind_gusts_10m,wind_direction_10m,is_day"
+         . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset"
          . "&precipitation_unit=" pu 
          . "&temperature_unit=" tu "&wind_speed_unit=" ws "&forecast_days=" max(this.forecastDays,1)
          . "&forecast_hours=" this.maxRows * this.hourIncrement + 2 "&timezone=auto"
@@ -721,7 +726,13 @@ class Weather {
          this.Gui.BackColor := bgc
       }
       ;-----------------------------------------------------------------------
-      ; Today
+      ; Constants
+      ;-----------------------------------------------------------------------
+      hc := 0xFFFFFF ; Header Color
+      tc := this.Ctl.daily._fg ; Normal Text Color (same as default)
+      cc := this.ColorCodeDaily
+      ;-----------------------------------------------------------------------
+      ; Current
       ;-----------------------------------------------------------------------
       this.Ctl.loc.Text  := this.Name
       this.Ctl.temp.Text := tf "°"
@@ -738,59 +749,15 @@ class Weather {
       this.Ctl.detail.Text := (tf < cold ? "❄ " : tf > hot ? "🌡️ " : "") 
          . "Feels " Round(this.Value(cur, "apparent_temperature")) "°"
          . "   Hum " Round(this.Value(cur, "relative_humidity_2m")) "%"
-         . "   Wind " Round(this.Value(cur, "wind_gusts_10m")) . wsu . d
-      ;-----------------------------------------------------------------------
-      ; Daily Forecast
-      ;-----------------------------------------------------------------------
-      hc := 0xFFFFFF ; Header Color
-      tc := this.Ctl.daily._fg ; Normal Text Color (same as default)
-      cc := this.ColorCodeDaily
-      If (this.forecastDays) {
-         rows := []
-         lows := [], highs := []
-         Loop this.forecastDays {
-            lows.Push(Round(this.List(day, "temperature_2m_min")[A_Index]))
-            highs.Push(Round(this.List(day, "temperature_2m_max")[A_Index]))
-         }
-         loMin := Min(lows*), loMax := Max(lows*)
-         hiMin := Min(highs*), hiMax := Max(highs*)
-         ; oMin := Min(loMin, hiMin), oMax := Max(loMax, hiMax)
-         Loop this.forecastDays {
-            i := A_Index
-            If i == 1
-               rows.Push([
-                 { t: "Day", al: "Left", c: hc }
-               , { t: "―Temp―", span: 4, al: "Center", c: hc }
-               , { t: "―Prec―", span: 3, al: "Center", c: hc }
-               , { t: "Wind", span: 2, al: "Center", c: hc }
-               ])
-            ; TODO - can use rain_sum or showers_sum vs precipitation_sum to determine showfall
-            psum := Number(this.List(day, "precipitation_sum")[i])
-            ssum := Number(this.List(day, "snowfall_sum")[i])
-            If ((psum + ssum) < 0.01)
-               pVal := Round(ssum, 1), pUnit := this.mks ? "mm" : "in", pIcon := ""
-            Else If ((this.mks ? ssum : ssum / 10) >= psum * 0.5)
-               pVal := Round(ssum, 1), pUnit := this.mks ? "cm" : "in", pIcon := "❄"
-            Else
-               pVal := Round(psum, 1), pUnit := this.mks ? "mm" : "in", pIcon := "🌧️"
-            rows.Push([
-               i == 1 ? "Today" : FormatTime(Trim(StrReplace(this.List(day, "time")[i], '-'), '"'), "ddd")
-               , { t: this.fixfix(lows[i] "°"), c: cc ? TempColor(lows[i], loMin, loMax) : tc }
-               , "🠊"
-               , { t: this.fixfix(highs[i] "°"), c: cc ? TempColor(highs[i], hiMin, hiMax) : tc }
-               , this.emoji.get(Integer(this.List(day, "weather_code")[i]), "🌈")
-               , pVal, pUnit, pIcon, Round(this.List(day, "wind_gusts_10m_max")[i]), Trim(wsu)
-            ])
-         }
-         this.Ctl.daily.SetRows(rows)
-      }
+         . "   Wind " Round(this.Value(cur, "wind_speed_10m")) . wsu . d
       ;-----------------------------------------------------------------------
       ; Hourly data starts at the current hour (forecast_hours), not midnight
       ;-----------------------------------------------------------------------
       times := this.List(hrs, "time")
       temps := this.List(hrs, "temperature_2m")
       pops  := this.List(hrs, "precipitation_probability")
-      winds := this.List(hrs, "wind_gusts_10m")
+      winds := this.List(hrs, "wind_speed_10m")
+      windg := this.List(hrs, "wind_gusts_10m")
       dirs  := this.List(hrs, "wind_direction_10m")
       codes := this.List(hrs, "weather_code")
       dns   := this.List(hrs, "is_day")
@@ -811,6 +778,7 @@ class Weather {
          t  := temps[i]
          p  := pops[i]
          w  := winds[i]
+         g  := windg[i]
          a  := this.hourlyAQI.Get(times[i], "")   ; from AQI query, matched by hour
          d  := Compass(dirs[i])
          wcn := Integer(codes[i])
@@ -824,19 +792,82 @@ class Weather {
                {t: "Temp", span: 2, al: "Center", c:hc}, 
                {t: "AQI",  al: "Center", c:hc}, 
                {t: "Prec", al: "Center", c:hc}, 
-               {t: "―Wind―", span: 3, al: "Center", c:hc}
+               {t: "Wind" . wsu, span: 4, al: "Center", c:hc}
             ])
          rows.Push([
-            this.Hour12(hr), daynight(dn)
+              this.Hour12(hr)
+            , daynight(dn)
             , { t: (IsNumber(t) ? this.fixfix(Round(t) "°") : "--"), c: cc && IsNumber(t) ? TempColor(Round(t), loHr, hiHr) : tc }
             , wc
             , IsNumber(a) ? {t: a, c: this.AqiColor(a)} : "--"
             , IsNumber(p) ? p "%" : "--"
-            , IsNumber(w) ? Round(w) : "--", Trim(wsu), d
+            , IsNumber(w) ? Round(w) : "--"
+            , "-"
+            , IsNumber(g) ? Round(g) : "--"
+            , d
          ])
          i += this.hourIncrement
       }
       this.Ctl.hourly.SetRows(rows)
+      ;-----------------------------------------------------------------------
+      ; Daily Forecast
+      ;-----------------------------------------------------------------------
+      If (this.forecastDays) {
+         rows := []
+         lows := [], highs := []
+         Loop this.forecastDays {
+            lows.Push(Round(this.List(day, "temperature_2m_min")[A_Index]))
+            highs.Push(Round(this.List(day, "temperature_2m_max")[A_Index]))
+         }
+         loMin := Min(lows*),        loMax := Max(lows*)
+         hiMin := Min(highs*),       hiMax := Max(highs*)
+      ; oMin  := Min(loMin, hiMin), oMax  := Max(loMax, hiMax)
+         winds := this.List(day, "wind_speed_10m_max")
+         windg := this.List(day, "wind_gusts_10m_max")
+         dirs  := this.List(day, "wind_direction_10m_dominant")
+         preps := this.List(day, "precipitation_sum")
+         snows := this.List(day, "snowfall_sum")
+         days  := this.List(day, "time")
+         codes := this.List(day, "weather_code")
+         Loop this.forecastDays {
+            i := A_Index
+            w := winds[i]
+            g := windg[i]
+            c := dirs[i]
+            If i == 1
+               rows.Push([
+                 { t: "Day", al: "Left", c: hc }
+               , { t: "―Temp―", span: 4, al: "Center", c: hc }
+               , { t: "―Prec―", span: 3, al: "Center", c: hc }
+               , { t: "Wind" wsu, span: 4, al: "Center", c: hc }
+               ])
+            ; TODO - can use rain_sum or showers_sum vs precipitation_sum to determine showfall
+            psum := IsNumber(preps[i]) ? Number(preps[i]) : 0 ; total water precepitation in / mm
+            ssum := IsNumber(snows[i]) ? Number(snows[i]) : 0 ; total rainfall precepitation in / cm
+            If (psum < 0.01)
+               pVal := Round(ssum, 1), pUnit := this.mks ? "mm" : "in", pIcon := ""
+            Else If ((this.mks ? ssum : ssum / 10) >= psum * 0.5) ; Assume snow is 10:1 expansion for water
+               pVal := Round(ssum, 1), pUnit := this.mks ? "cm" : "in", pIcon := "❄"
+            Else
+               pVal := Round(psum, 1), pUnit := this.mks ? "mm" : "in", pIcon := "🌧️"
+
+            rows.Push([
+               i == 1 ? "Today" : FormatTime(Trim(StrReplace(days[i], '-'), '"'), "ddd")
+               , { t: this.fixfix(lows[i] "°"), c: cc ? TempColor(lows[i], loMin, loMax) : tc }
+               , "🠊"
+               , { t: this.fixfix(highs[i] "°"), c: cc ? TempColor(highs[i], hiMin, hiMax) : tc }
+               , this.emoji.get(Integer(codes[i]), "🌈")
+               , pVal
+               , pUnit
+               , pIcon
+               , isnumber(w) ? round(w) : "--"
+               , "-" 
+               , isnumber(g) ? Round(g) : "--"
+               , isnumber(c) ? Compass(c) : ""
+            ])
+         }
+         this.Ctl.daily.SetRows(rows)
+      }
       ;-----------------------------------------------------------------------
       ; Updated footer
       ;-----------------------------------------------------------------------
@@ -934,7 +965,7 @@ class Weather {
             If (GetKeyState("Ctrl", "P"))
                this.Gui.hide()
             else
-               this.Gui.show(), this.RefresMe()
+               this.Gui.show()
          Case 0x203:   ; user double left-clicked tray icon
          Case 0x204:   ; user right-clicked tray icon
          Case 0x208:   ; user middle-clicked tray icon
@@ -956,7 +987,16 @@ class Weather {
       }
       return true
    }
-   /**
+   Static FitGridWidth() {
+      need := Ceil(Max(this.Ctl.hourly.ContentW, this.Ctl.daily.ContentW))
+      If (need > this.gridW) {
+         this.gridW := need
+         this.Ctl.hourly.Move(, , need)
+         this.Ctl.daily.Move(, , need)
+         this.Gui.Show("NoActivate AutoSize")
+      }
+   }
+/**
     * Return an object with the lat/long of some place
     * @param place Name of location
     * @returns {Integer | Object}  n.lat, n.lon, n.name
@@ -1035,10 +1075,34 @@ class Weather {
             place .= (place = "" ? "" : ", ") m[1]
       Return place
    }
-   ; Trigger a paint for the D2D elements, shouldn't flash
-   ; RDW_INVALIDATE|RDW_ALLCHILDREN|RDW_UPDATENOW|RDW_ERASE
-   Static RefresMe() => DllCall("RedrawWindow", "Ptr", Weather.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0001|0x0080|0x0100|0x0004)
-
+   /**
+    * Refresh the GUI without it flashing
+    * Native controls have transparent backgrounds, so they need refresh when updated
+    * Once that is done call the D2D refresh for the D2D based controls
+    * If we just invalidate the whole GUI, the native controls will temporally flash
+    */
+   Static RefresMe() {
+      ; Refresh the native controls only
+      Weather.RefreshNative() ; needed for when widget is on a disabled screen, background doesn't always erase
+      ; Refresh the D2D controls
+      D2DText.RefreshAll(this.Gui)
+   } 
+   /**
+    * Erase-and-invalidate only the transparent native text controls; D2D controls clear themselves.
+    * Follow with RefresMe(false) to paint everything in one pass.
+    */
+   Static RefreshNative() {
+      hG := this.Gui.Hwnd
+      rc := Buffer(16)
+      For name, ctl in this.Ctl.OwnProps() {
+         If !(ctl is Gui.Text OR ctl is Gui.PIC)
+            Continue
+         DllCall("GetWindowRect", "Ptr", ctl.Hwnd, "Ptr", rc)
+         DllCall("MapWindowPoints", "Ptr", 0, "Ptr", hG, "Ptr", rc, "UInt", 2)   ; screen -> client
+         DllCall("RedrawWindow", "Ptr", hG, "Ptr", rc, "Ptr", 0, "UInt", 0x0001|0x0004|0x0080)   ; INVALIDATE|ERASE|ALLCHILDREN
+      }
+      DllCall("RedrawWindow", "Ptr", hG, "Ptr", 0, "Ptr", 0, "UInt", 0x0100|0x0080)   ; one UPDATENOW pass for everything queued
+   }   
    /**
     * Update the active location name if it was renamed
     * @param newName New location name to use

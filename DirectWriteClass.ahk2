@@ -603,6 +603,7 @@ class D2DText {
  */
 class D2DGrid extends D2DText {
    _cols := [], _rows := [], _gap := 8, _dirty := true, _items := []
+   _justify := false, _lastW := 0, _natW := 0
    __New(args*) {
       super.__New(args*)
       this.SetWrap(false)
@@ -612,7 +613,14 @@ class D2DGrid extends D2DText {
       this._FreeLayouts()
       super.__Delete()
    }
-
+/** Natural width in DIPs of pad + columns + inner gaps */
+   ContentW {
+      get {
+         If this._dirty
+            this._Layout()
+         Return this._natW
+      }
+   }
    _FreeLayouts() {
       for items in this._items
          for it in items
@@ -620,6 +628,12 @@ class D2DGrid extends D2DText {
       this._items := []
    }
 
+   /** Stretch the column gaps so the columns span the control's full width (only when the content is narrower). */
+   SetJustify(on := true) {
+      this._justify := on
+      this._dirty := true
+      this.Refresh()
+   }
    ; Cached layouts copy the shared format's settings when created, so changing them invalidates the cache
    SetLineHeight(px?) {
       this._dirty := true
@@ -648,7 +662,6 @@ class D2DGrid extends D2DText {
       this._dirty := true
       this.Refresh()
    }
-
    /**
     * Sets the rows and repaints.
     * @param {Array} rows Array of arrays of cells: a string, or {t: text, c: 0xRRGGBB, al: alignment, span: columns}.
@@ -691,8 +704,15 @@ class D2DGrid extends D2DText {
    }
    /** Computes each column's x and width. Run lazily from _Render when columns, rows or font changed. */
    /** Builds one layout per non-empty cell, sizes auto columns, then fits each layout to its cell box. */
-   _Layout() {
+   /**
+    * Builds one layout per non-empty cell, sizes auto columns, positions the columns (stretching the gaps to fill dw
+    * when SetJustify is on and the content is narrower), then fits each layout to its cell box.
+    * Run lazily from _Render when columns, rows, font or (with justify) the control width changed.
+    * @param {Number} dw Control width in DIPs; 0 = natural width (no stretching).
+    */
+   _Layout(dw := 0) {
       this._FreeLayouts()
+      this._lastW := dw
       cols := this._cols, nc := cols.Length
       for c in cols
          c.cw := (c.HasProp("w") && (c.w is Number)) ? c.w : 0
@@ -717,11 +737,28 @@ class D2DGrid extends D2DText {
          }
          this._items.Push(items)
       }
-      ; column positions
+      ; column positions (natural)
       x := this._pad
       for c in cols {
          c.x := x
          x += c.cw + (c.HasProp("gap") ? c.gap : this._gap)
+      }
+      this._natW := nc ? cols[nc].x + cols[nc].cw + this._pad : 2 * this._pad   ; natural width, before any stretching      ; stretch: spread the surplus over the inner gaps in proportion to their size, so tight pairs stay tight
+
+      if this._justify && nc > 1 && dw > this._natW {
+         extra := dw - this._natW
+         tot := 0
+         for i, c in cols
+            if i < nc
+               tot += c.HasProp("gap") ? c.gap : this._gap
+         acc := 0
+         for i, c in cols {
+            c.x += acc
+            if i < nc {
+               g := c.HasProp("gap") ? c.gap : this._gap
+               acc += extra * (tot > 0 ? g / tot : 1 / (nc - 1))
+            }
+         }
       }
       ; pass 2: fit each layout to the box of the columns it covers, and set its alignment
       rh := this._lineH
@@ -738,8 +775,9 @@ class D2DGrid extends D2DText {
    }
 
    _Render(rt, w, h) {
-      if this._dirty
-         this._Layout()
+      dw := w * this.sf                                          ; client width in DIPs (w is physical pixels)
+      if this._dirty || (this._justify && dw != this._lastW)
+         this._Layout(dw)
       rh := this._lineH, clr := this._fg
       pt := Buffer(8)
       for r, items in this._items {
@@ -754,7 +792,7 @@ class D2DGrid extends D2DText {
       }
       if clr != this._fg
          ComCall(8, this._brush, "Ptr", D2DText._Color(this._fg), "Int")
-   }
+   }  
 }
 ;@reference DirectWriteClass.d.ahk
 Gui.Prototype.DefineProp("AddD2DText", {Call: (g, args*) => D2DText.Create(g, args*)})
@@ -814,6 +852,10 @@ oGui.OnEvent("Close", (*) => ExitApp())
 */
 
 
+/**
+ * Return accurate fractional ms wall clock
+ * @returns {Float} ms wall clock
+ */
 QPC() {
    static freq := 0
    if !freq
