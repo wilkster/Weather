@@ -13,29 +13,30 @@ TODO
 - seems to stay on all desktops, this is desired
 - Don't make static so would could have multiple instances at once for different locations
   Pass in location name into __Init
+- name should be userName, returned should be fullName
 - Consider differnt layouts like MAC OS weather widget
 - https://github.com/Makin-Things/weather-icons (SVG, some are animated)
 */
 
 class Weather {
-   static Lat           := 0.0
-   static Lon           := 0.0
-   static CC            := ""
-   static Name          := ""
-   static Interval      := 30 ; minutes
    /** @type {Gui} */
-   static Gui           := ""
-   static Ctl           := {}
-   static Menu          := ""
-   Static ActiveIcon    := ""
-   Static forecastDays  := 2
-   Static hourIncrement := 3
-   Static maxRows       := 8
-   Static OnTop         := 0
-   Static mks           := 0
+   static Gui             := ""
+   static Lat             := 0.0
+   static Lon             := 0.0
+   static CC              := ""
+   static userName        := ""
+   static Interval        := 30 ; minutes
+   static Ctl             := {}
+   static Menu            := ""
+   Static ActiveIcon      := ""
+   Static forecastDays    := 5
+   Static hourIncrement   := 3
+   Static maxRows         := 8
+   Static OnTop           := 0
+   Static mks             := 0
    Static fontScaleFactor := 1
-   Static ColorCodeDaily := 1
-   Static Assets        := A_ScriptDir . "\Assets\"
+   Static ColorCodeDaily  := 1
+   Static Assets          := A_ScriptDir . "\Assets\"
   /*
       WMO Weather Codes Reference
       Code	      Description
@@ -158,23 +159,19 @@ class Weather {
       this.Launched := A_TickCount
 
       ; Set default locations
-      this.Name := IniRead(this.iniFile, A_ComputerName, "Loc", "")
-      If (obj := this.GeocodeName(this.Name)) {
+      this.userName := IniRead(this.iniFile, A_ComputerName, "Loc", "")
+      If (obj := this.GeocodeName(this.userName)) {
          this.Lat     := obj.lat
          this.Lon     := obj.lon
          this.CC      := obj.CC
          ; Default was initially used
-         ; name is long name from geocide
-         ; place is term user used for search and will be the tag
-         If (this.Name != obj.Place) {
-            IniWrite(obj.Place, this.iniFile, A_ComputerName, "Loc")
-            IniWrite(obj.Place, this.iniFile, "Locations")
-            IniWrite(obj.CC, this.iniFile, obj.Place, "CC")
-            IniWrite(obj.Lat, this.iniFile, obj.Place, "Lat")
-            IniWrite(obj.Lon, this.iniFile, obj.Place, "Lon")
-            IniWrite(obj.Name, this.iniFile, obj.Place, "FullName")
+         If (this.userName != obj.userName) {
+            IniWrite(obj.userName, this.iniFile, A_ComputerName, "Loc") ; default
+            IniWrite(obj.userName, this.iniFile, "Locations") ; add to locations
+            ; Cache the loctation
+            this.userName    := obj.userName
+            this.cacheUserLocation(obj)
          }
-         this.Name    := obj.Place
          this.NeedGeo := 0
       } Else {
          if (MsgBox("Failed to set a location for weather, do you want to continue?",,0x4) = "No") 
@@ -224,7 +221,7 @@ class Weather {
          ym adds a margin
          r8 means 8 rows
       */
-      this.Ctl.loc     := this.AddTextCtl(fs("w280"),                    this.Name,    fs("s11 Bold") " cA6ADC8", "Segoe UI")  ; Los Angeles
+      this.Ctl.loc     := this.AddTextCtl(fs("w280"),                    this.userName,    fs("s11 Bold") " cA6ADC8", "Segoe UI")  ; Los Angeles
 
       this.Ctl.temp    := this.AddTextCtl(fs("w78 y+2") " Right",        "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; 75
       this.Ctl.AQI     := this.AddTextCtl(fs("w43 x+0 yp+12") " Right",  "---",        fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; 34 same row
@@ -259,7 +256,7 @@ class Weather {
          {al: "Left",  w: "auto", gap: fs(10)},   ; day
          {al: "Right", w: "auto", gap: fs(4)},    ; low
          {al: "Left",  w: "auto", gap: fs(4)},    ; "to"
-         {al: "Right", w: "auto", gap: fs(2)},    ; high
+         {al: "Right", w: "auto", gap: fs(4)},    ; high
          {al: "Left",  w: "auto", gap: fs(12)},   ; condition icon
          {al: "Right", w: "auto", gap: fs(3)},    ; precip amount
          {al: "Left",  w: "auto", gap: fs(2)},    ; precip unit
@@ -410,7 +407,7 @@ class Weather {
          maxLoc :=IniRead(this.iniFile, "Default", "Max Locations", 50)
          for idx,loc in this.ReadLocations(this.iniFile) {
             this.menu.add(loc, this.setlocation.bind(this))
-            if (loc = this.Name)
+            if (loc = this.userName)
                this.menu.Check(loc)
             if idx >= maxLoc
                break
@@ -502,25 +499,22 @@ class Weather {
     * @param ItemPos menu position
     * @param MyMenu menu handle
     */
-   Static SetLocation(place, ItemPos, MyMenu) {
-      If (place != this.Name) {
-         If (obj := this.GeocodeName(place)) {
-            this.Lat     := obj.lat
-            this.Lon     := obj.lon
-            this.CC      := obj.CC
-            this.Name    := place
-            this.NeedGeo := 0
-            IniWrite(place, this.iniFile, A_ComputerName, "Loc")
+   Static SetLocation(userName, ItemPos, MyMenu) {
+      If (userName != this.userName) {
+         If (obj := this.GeocodeName(userName)) {
+            this.Lat      := obj.lat
+            this.Lon      := obj.lon
+            this.CC       := obj.CC
+            this.userName := userName
+            this.NeedGeo  := 0
+            IniWrite(userName, this.iniFile, A_ComputerName, "Loc")
             If (!obj.cached) {
-               IniWrite(this.CC, this.iniFile, place, "CC")
-               IniWrite(this.Lat, this.iniFile, place, "Lat")
-               IniWrite(this.Lon, this.iniFile, place, "Lon")
-               IniWrite(obj.Name, this.iniFile, place, "FullName")
+               this.cacheUserLocation(obj)
             }
          } Else {
             this.NeedGeo := 1
-            this.Ctl.updated.Text := "Location lookup failed for " place
-            MsgBox("Failed to get a location for`n" place, "Location Error", 0x30)
+            this.Ctl.updated.Text := "Location lookup failed for " userName
+            MsgBox("Failed to get a location for`n" userName, "Location Error", 0x30)
          }
       }
       ; User may have changed these by hand
@@ -531,11 +525,22 @@ class Weather {
       this.RefreshData()
    }
    /**
+    * Save a location object to the ini file for caching
+    * @param obj Location Object
+    * @returns {unset?} 
+    */
+   Static cacheUserLocation(obj) {
+      IniWrite(obj.CC, this.iniFile, obj.userName, "CC")
+      IniWrite(obj.Lat, this.iniFile, obj.userName, "Lat")
+      IniWrite(obj.Lon, this.iniFile, obj.userName, "Lon")
+      IniWrite(obj.fullName, this.iniFile, obj.userName, "FullName")
+   }
+   /**
     * Save Gui location on exit
     */
    static SaveOnExit(ExitReason, ExitCode) {
       this.Gui.GetPos(&X, &Y)
-      IniWrite(this.Name, this.iniFile, A_ComputerName, "Loc")
+      IniWrite(this.userName, this.iniFile, A_ComputerName, "Loc")
       IniWrite(X, this.iniFile, A_ComputerName, "X")
       IniWrite(Y, this.iniFile, A_ComputerName, "Y")
       this.writeIfBlank(this.ColorCodeDaily, A_ComputerName, "Color Code Daily")
@@ -592,7 +597,7 @@ class Weather {
       }
       SetTimer(this.cbUpdateData, ok ? this.Interval * 60000 : -60000)
       this.PruneMemory()
-      OutputDebug("WeatherWidget: Updated Weather and Air Quality for " this.name)
+      OutputDebug("WeatherWidget: Updated Weather and Air Quality for " this.userName)
    }
    /**
     * Resolve lat/lon from the location name if needed.
@@ -601,8 +606,8 @@ class Weather {
    Static EnsureGeo() {
       If (!this.NeedGeo)
          Return true
-      If (!(obj := this.GeocodeName(this.Name))) {
-         this.Ctl.updated.Text := "Location lookup failed for " this.Name " - " FormatTime(, "h:mm tt")
+      If (!(obj := this.GeocodeName(this.userName))) {
+         this.Ctl.updated.Text := "Location lookup failed for " this.userName " - " FormatTime(, "h:mm tt")
          Return false
       }
       this.Lat := obj.lat, this.Lon := obj.lon, this.CC :=obj.CC, this.NeedGeo := 0
@@ -667,7 +672,7 @@ class Weather {
          pu := "inch"
       }
       url := "https://api.open-meteo.com/v1/forecast?latitude=" this.Lat "&longitude=" this.Lon
-         . "&current=weather_code,temperature_2m,,wind_gusts_10m,wind_speed_10m,wind_direction_10m,apparent_temperature,relative_humidity_2m,is_day"
+         . "&current=weather_code,temperature_2m,wind_gusts_10m,wind_speed_10m,wind_direction_10m,apparent_temperature,relative_humidity_2m,is_day"
          . "&hourly=weather_code,temperature_2m,precipitation_probability,wind_speed_10m,wind_gusts_10m,wind_direction_10m,is_day"
          . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset"
          . "&precipitation_unit=" pu 
@@ -735,7 +740,7 @@ class Weather {
       ;-----------------------------------------------------------------------
       ; Current
       ;-----------------------------------------------------------------------
-      this.Ctl.loc.Text  := this.Name
+      this.Ctl.loc.Text  := this.userName
       this.Ctl.temp.Text := tf "°"
       wsu                := this.mks ? " km/h " : " mph "
       sr                 := "☀↑  " StrLower(FormatTime(RegExReplace(this.List(day, "sunrise")[1] , "\D"), "h:mm tt"))   ; "7:22 am"
@@ -894,7 +899,7 @@ class Weather {
                OutputDebug("Missing expected Icon File:" Icon)
             }
          }
-         A_IconTip := this.Name "`n" (Round(this.Value(cur, "temperature_2m")) . "° - " . this.Codes[code])
+         A_IconTip := this.userName "`n" (Round(this.Value(cur, "temperature_2m")) . "° - " . this.Codes[code])
       }
       static Compass(deg) {
          if (!IsNumber(deg))
@@ -1002,24 +1007,25 @@ class Weather {
     * @param place Name of location
     * @returns {Integer | Object}  n.lat, n.lon, n.name
     */
-   Static GeocodeName(place) {
-      If (!place) {
+   Static GeocodeName(userName) {
+      If (!userName) {
          default := this.GetLocalPlaceName()
          res := InputBox("Enter Default Weather Location`nAn estimated location is shown below`nModify as needed", "Weather Locaiton Needed",,default)
          If (res.Result = "Ok") {
-            place := res.Value
+            userName := res.Value
          } else {
             return false
          }
       }
       ; See if location is cached
-      lat := IniRead(this.iniFile, place, "Lat", "")
-      lon := IniRead(this.iniFile, place, "Lon", "")
-      CC  := IniRead(this.iniFile, place, "CC", "us")
+      lat      := IniRead(this.iniFile, userName, "Lat", "")
+      lon      := IniRead(this.iniFile, userName, "Lon", "")
+      CC       := IniRead(this.iniFile, userName, "CC", "us")
+      fullName := IniRead(this.iniFile, userName, "FullName", "")
       if (IsNumber(lon) AND IsNumber(lat))
-         return {place: place, lat: Round(lat,7), lon: Round(lon,7), name: place, CC: CC, cached:1}
+         return {userName:userName, fullName:fullName, lat: Round(lat,7), lon: Round(lon,7), CC: CC, cached:1}
       ; Query location data from openstreetmap
-      url := "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&q=" UriEncode(place)
+      url := "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&q=" UriEncode(userName)
       try {
          http := ComObject("WinHttp.WinHttpRequest.5.1")
          http.SetTimeouts(5000, 5000, 10000, 10000)
@@ -1036,7 +1042,7 @@ class Weather {
 
       RegExMatch(txt, '"display_name":"((?:[^"\\]|\\.)*)"', &mName)
       RegExMatch(txt, '"country_code":"([a-z]{2})"', &mCC)
-      return {place: place, lat: Round(mLat[1],7), lon: Round(mLon[1],7), name: mName ? mName[1] : place, CC: mCC ? mCC[1] : "", cached:0}
+      return {userName:userName, fullName:mName ? mName[1] : userName, lat: Round(mLat[1],7), lon: Round(mLon[1],7), CC: mCC ? mCC[1] : "", cached:0}
       
       UriEncode(s) {
          n := StrPut(s, "UTF-8") - 1
@@ -1065,7 +1071,6 @@ class Weather {
          whr.Open("GET", "https://ipwho.is/?fields=success,city,region,country", false)
          whr.Send()
          txt := whr.ResponseText
-         OutputDebug(txt)
       } catch
          Return ""
       If !InStr(txt, '"success": true')
@@ -1109,11 +1114,9 @@ class Weather {
     * @param newName New location name to use
     * @returns {unset?} 
     */
-   Static ChangeLocationName(newName) {
-      If this.Name != newName {
-         this.Name := newName
-         this.Ctl.loc.Text := newName
-      }
+   Static ChangeActiveLocationName(newName) {
+      this.userName := newName
+      this.Ctl.loc.Text := newName
    }
 }
 /**
@@ -1358,30 +1361,27 @@ class LocationManager {
    }
 
    static Add(*) {
-      place := Trim(this.Edit.Value)
-      if place = ""
+      userName := Trim(this.Edit.Value)
+      if userName = ""
          return
       for item in this.Items {
-         if item = place {   ; case-insensitive duplicate check
+         if item = userName {   ; case-insensitive duplicate check
             MsgBox("Already in the list.", "Duplicate", "Icon!")
             return
          }
       }
       ; Validate via URL
-      If (obj := Weather.GeocodeName(place)) {
+      If (obj := Weather.GeocodeName(userName)) {
          ; Cache location to INI file
-         IniWrite(obj.CC, this.iniFile, place, "CC")
-         IniWrite(obj.Lat, this.iniFile, place, "Lat")
-         IniWrite(obj.Lon, this.iniFile, place, "Lon")
-         IniWrite(obj.Name, this.iniFile, place, "FullName")
+         Weather.cacheUserLocation(obj)
          ; Save the new location
-         this.Items.Push(place)
+         this.Items.Push(userName)
          this.Save()
          this.RefreshListBox(this.Items.Length)
          this.Edit.Value := ""
          this.Edit.Focus()
       } Else {
-         MsgBox("Could not find location " place,,0x10)
+         MsgBox("Could not find location " userName,,0x10)
       }
    }
 
@@ -1438,8 +1438,10 @@ class LocationManager {
       f := FileOpen(this.IniFile, "w", enc)
       f.Write(out)
       f.Close()
+      ; If old entry was active, update to new name
+      if (this.Items[i] == Weather.UserName)
+         Weather.ChangeActiveLocationName(newName)
       this.Items[i] := newName
-      Weather.ChangeLocationName(newName)
       this.RefreshListBox(i)
    }
    static Move(dir, *) {
