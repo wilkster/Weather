@@ -296,20 +296,26 @@ class Weather {
 
       Return g
 
-   fs(val, r := 1) {
-      k := this.fontScaleFactor
-      if IsNumber(val)
-         return Round(val * k, r)
-      out := ""
-      for tok in StrSplit(Trim(val), [" ", "`t"]) {
-         if tok = ""
-            continue
-         if RegExMatch(tok, "i)^([xywh][msp]?[+-]?|s)(\d+(?:\.\d+)?)$", &m)
-            tok := m[1] Round(m[2] * k, m[1] = "s" ? r : 0)
-         out .= (out = "" ? "" : " ") tok
+      /**
+       * Scale all the numberic values in a string based on the current fontScaleFactor
+       * @param val Value to scale
+       * @param {Integer} r 
+       * @returns {Integer | String} 
+       */
+      fs(val, r := 1) {
+         k := this.fontScaleFactor
+         if IsNumber(val)
+            return Round(val * k, r)
+         out := ""
+         for tok in StrSplit(Trim(val), [" ", "`t"]) {
+            if tok = ""
+               continue
+            if RegExMatch(tok, "i)^([xywh][msp]?[+-]?|s)(\d+(?:\.\d+)?)$", &m)
+               tok := m[1] Round(m[2] * k, m[1] = "s" ? r : 0)
+            out .= (out = "" ? "" : " ") tok
+         }
+         return out
       }
-      return out
-   }
 
    }
    /**
@@ -733,9 +739,11 @@ class Weather {
       ;-----------------------------------------------------------------------
       ; Constants
       ;-----------------------------------------------------------------------
-      hc := 0xFFFFFF ; Header Color
-      tc := this.Ctl.daily._fg ; Normal Text Color (same as default)
-      cc := this.ColorCodeDaily
+      hc       := 0xFFFFFF ; Header Color
+      tc       := this.Ctl.daily._fg ; Normal Text Color (same as default)
+      tcbright := this.ScaleBrightness(tc, 25)
+      tcdim    := this.ScaleBrightness(tc, -25)
+      cc       := this.ColorCodeDaily ; boolean
       ;-----------------------------------------------------------------------
       ; Current
       ;-----------------------------------------------------------------------
@@ -800,7 +808,7 @@ class Weather {
                {t: "Wind" . wsu, span: 4, al: "Center", c:hc}
             ])
          rows.Push([
-              { t: this.Hour12(hr), c: dn ? tc: "0x739dea"}
+              { t: this.Hour12(hr), c: dn ? tcbright: tcdim}
             , { t: (IsNumber(t) ? this.fixfix(Round(t) "°") : "--"), c: cc && IsNumber(t) ? TempColor(Round(t), loHr, hiHr) : tc }
             , wc
             , IsNumber(a) ? {t: a, c: this.AqiColor(a)} : "--"
@@ -917,6 +925,7 @@ class Weather {
          Return (r << 16) | (g << 8) | bl
       }
    }
+
    Static Dpi()               => DllCall("GetDpiForWindow", "Ptr", Weather.Gui.Hwnd, "UInt")
    static Section(json, name) => RegExMatch(json, '"' name '":\{([^}]*)\}', &m) ? m[1] : ""
    static Value(sec, key)     => RegExMatch(sec, '"' key '":(-?[\d.]+)', &m) ? m[1] : ""
@@ -926,6 +935,32 @@ class Weather {
    Static FormatLR(left, right, total := 80) {
       pad := Max(total - StrLen(left), StrLen(right))
       Return Format("{1}{2:" pad "s}", left, right)
+   }
+   /**
+    * Brighten (pct > 0) or dim (pct < 0) a color while keeping the channel ratios, so the hue is unchanged.
+    * Brightening stops when the brightest channel reaches 255 instead of clipping channels individually.
+    * +pct is the inverse of -pct (+25 = x1.333, -25 = x0.75) until the cap is hit.
+    * @param {Integer} rgb 0xRRGGBB
+    * @param {Integer} pct -100..100 (-100 = black; +100 = the fully bright version of the same hue)
+    * @returns {Integer} 0xRRGGBB
+    */
+   Static ScaleBrightness(rgb, pct) {
+      pct := Max(-100, Min(100, pct))
+      r := (rgb >>> 16) & 0xFF, g := (rgb >>> 8) & 0xFF, b := rgb & 0xFF
+      m := Max(r, g, b)
+      If (m = 0)
+         Return rgb                                   ; black has no hue to preserve
+      If (pct >= 0)
+         num := 100, den := 100 - Min(pct, 99)
+      Else
+         num := 100 + pct, den := 100
+      If (m * num > 255 * den)                        ; would clip: limit so the brightest channel lands on 255
+         num := 255, den := m
+      half := den >> 1                                ; round to nearest
+      r := (r * num + half) // den
+      g := (g * num + half) // den
+      b := (b * num + half) // den
+      Return (r << 16) | (g << 8) | b
    }
    ;----------------------------------------------------------------------------
    ; Round the corners of the GUI for windows 11, ignored on Windows 10
