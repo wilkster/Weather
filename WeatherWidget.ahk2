@@ -241,15 +241,14 @@ class Weather {
       ; Column widths are measured from the text; only the gaps (DIPs, scaled with fs like everything else) are tuned
       this.Ctl.hourly := this.Gui.AddD2DGrid(fs("w280 xm y+8") " r" (this.maxRows + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write grid for emojis
       this.Ctl.hourly.SetColumns([ ; gap is after the entry
-         {al: "Right", w: "auto", gap: fs(4)},    ; time
-         {al: "Left",  w: "auto", gap: fs(10)},   ; day / night icon
+         {al: "Right", w: "auto", gap: fs(10)},    ; time
          {al: "Right", w: "auto", gap: fs(4)},    ; temp
          {al: "Left",  w: "auto", gap: fs(12)},   ; condition icon
          {al: "Right", w: "auto", gap: fs(10)},   ; aqi
          {al: "Right", w: "auto", gap: fs(12)},   ; precip %
          {al: "Right", w: "auto", gap: fs(2)},    ; wind speed
          {al: "Right", w: "auto", gap: fs(2)},    ; "-"
-         {al: "Right", w: "auto", gap: fs(8)},    ; wind speed gusts
+         {al: "Right", w: "auto", gap: fs(6)},    ; wind speed gusts
          {al: "Left",  w: "auto"}])               ; wind direction
       this.Ctl.daily  := this.Gui.AddD2DGrid(fs("wp y+8") " r" (this.forecastDays + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write grid for emojis
       this.Ctl.daily.SetColumns([
@@ -263,7 +262,7 @@ class Weather {
          {al: "Left",  w: "auto", gap: fs(12)},   ; precip icon
          {al: "Right", w: "auto", gap: fs(2)},    ; wind speed
          {al: "Right", w: "auto", gap: fs(2)},    ; "-"
-         {al: "Right", w: "auto", gap: fs(8)},    ; wind speed gusts
+         {al: "Right", w: "auto", gap: fs(6)},    ; wind speed gusts
          {al: "Left",  w: "auto"}])               ; wind direction
       this.Ctl.updated := this.AddTextCtl(fs("wp y+8"),,                                fs("s9")  " c7F849C", "Segoe UI")  ; overlay1
       this.ActiveIcon := ""
@@ -591,7 +590,7 @@ class Weather {
       }
       ; Everything updated, now refresh all at once
       ; Change backcolor outside of WM_SETREDRAW off
-      this.RefresMe()
+      this.RefreshMe()
       If (this.Gui.BackColor != this.BackColor) {
          this.Gui.BackColor := this.BackColor ; triggers a repaint
       }
@@ -794,15 +793,14 @@ class Weather {
             wc := this.emoji.get(wcn, "🌈")
          if A_Index == 1
             rows.Push([
-               {t: "―Time―", span: 2, al: "Center", c:hc}, 
+               {t: "Time", span: 1, al: "Center", c:hc}, 
                {t: "Temp", span: 2, al: "Center", c:hc}, 
                {t: "AQI",  al: "Center", c:hc}, 
                {t: "Prec", al: "Center", c:hc}, 
                {t: "Wind" . wsu, span: 4, al: "Center", c:hc}
             ])
          rows.Push([
-              this.Hour12(hr)
-            , daynight(dn)
+              { t: this.Hour12(hr), c: dn ? tc: "0x739dea"}
             , { t: (IsNumber(t) ? this.fixfix(Round(t) "°") : "--"), c: cc && IsNumber(t) ? TempColor(Round(t), loHr, hiHr) : tc }
             , wc
             , IsNumber(a) ? {t: a, c: this.AqiColor(a)} : "--"
@@ -818,6 +816,7 @@ class Weather {
       ;-----------------------------------------------------------------------
       ; Daily Forecast
       ;-----------------------------------------------------------------------
+      rnd := this.mks ? 1 : 2
       If (this.forecastDays) {
          rows := []
          lows := [], highs := []
@@ -851,11 +850,11 @@ class Weather {
             psum := IsNumber(preps[i]) ? Number(preps[i]) : 0 ; total water precepitation in / mm
             ssum := IsNumber(snows[i]) ? Number(snows[i]) : 0 ; total rainfall precepitation in / cm
             If (psum < 0.01)
-               pVal := Round(ssum, 1), pUnit := this.mks ? "mm" : "in", pIcon := ""
+               pVal := Round(ssum, rnd), pUnit := this.mks ? "mm" : "in", pIcon := ""
             Else If ((this.mks ? ssum : ssum / 10) >= psum * 0.5) ; Assume snow is 10:1 expansion for water
-               pVal := Round(ssum, 1), pUnit := this.mks ? "cm" : "in", pIcon := "❄"
+               pVal := Round(ssum, rnd), pUnit := this.mks ? "cm" : "in", pIcon := "❄"
             Else
-               pVal := Round(psum, 1), pUnit := this.mks ? "mm" : "in", pIcon := "🌧️"
+               pVal := Round(psum, rnd), pUnit := this.mks ? "mm" : "in", pIcon := "🌧️"
 
             rows.Push([
                i == 1 ? "Today" : FormatTime(Trim(StrReplace(days[i], '-'), '"'), "ddd")
@@ -1087,7 +1086,7 @@ class Weather {
     * Once that is done call the D2D refresh for the D2D based controls
     * If we just invalidate the whole GUI, the native controls will temporally flash
     */
-   Static RefresMe() {
+   Static RefreshMe() {
       ; Refresh the native controls only
       Weather.RefreshNative() ; needed for when widget is on a disabled screen, background doesn't always erase
       ; Refresh the D2D controls
@@ -1153,7 +1152,7 @@ SetupEventMonitoring() {
       If (wParam = WTS_SESSION_LOCK) {
          SetTimer(Weather.cbUpdateData, 0)
       } Else If (wParam = WTS_SESSION_UNLOCK) {
-         Weather.RefresMe()
+         Weather.RefreshMe()
          ; D2DText.RefreshAll(Weather.Gui)
          OutputDebug("WeatherWidget: Session Change")
          SetTimer(Weather.cbUpdateData, -5000)
@@ -1165,7 +1164,7 @@ SetupEventMonitoring() {
       Static PBT_POWERSETTINGCHANGE := 0x8013
       Switch wParam {
          Case PBT_APMRESUMESUSPEND, PBT_APMRESUMEAUTOMATIC:
-            Weather.RefresMe()
+            Weather.RefreshMe()
             ; D2DText.RefreshAll(Weather.Gui)
             SetTimer(Weather.cbUpdateData, -10000)
             OutputDebug("WeatherWidget: Resume from Suspension")
@@ -1173,7 +1172,7 @@ SetupEventMonitoring() {
             ; POWERBROADCAST_SETTING: GUID (16) + DataLength (4) + Data
             ; Data: 0 = off, 1 = on, 2 = dimmed, ignore initial trigger at launch
             If (A_TickCount > (Weather.Launched + 60000) AND NumGet(lParam, 20, "UChar") = 1) {
-               Weather.RefresMe()
+               Weather.RefreshMe()
                SetTimer(Weather.cbUpdateData, -5000)
                OutputDebug("WeatherWidget: PBT_POWERSETTINGCHANGE")
             }
@@ -1192,7 +1191,7 @@ SetupEventMonitoring() {
       SetTimer(RefreshGui, -4000)   ; let the display stack settle first
       Return
       Static RefreshGui() {
-         Weather.RefresMe()
+         Weather.RefreshMe()
       }
    }
    ;----------------------------------------------------------------------
