@@ -221,7 +221,7 @@ class Weather {
          ym adds a margin
          r8 means 8 rows
       */
-      wid := 295 * this.fontScaleFactor ; hand tune this
+      wid := 295 ; hand tune this
       this.Ctl.loc     := this.AddTextCtl(fs("w" wid),                    this.userName,    fs("s11 Bold") " cA6ADC8", "Segoe UI")  ; Los Angeles
 
       this.Ctl.temp    := this.AddTextCtl(fs("w78 y+2") " Right",        "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; 75
@@ -742,6 +742,7 @@ class Weather {
       tc       := this.Ctl.daily._fg ; Normal Text Color (same as default)
       tcbright := this.ScaleBrightness(tc, 25)
       tcdim    := this.ScaleBrightness(tc, -25)
+      tcrb     := this.ScaleBrightness(tc, -50)
       cc       := this.ColorCodeDaily ; boolean
       ;-----------------------------------------------------------------------
       ; Current
@@ -868,7 +869,7 @@ class Weather {
             rows.Push([
                i == 1 ? "Today" : FormatTime(Trim(StrReplace(days[i], '-'), '"'), "ddd")
                , { t: this.fixfix(lows[i] "°"), c: cc ? TempColor(lows[i], loMin, loMax) : tc }
-               , {t: RangeBar(lows[i], highs[i], loMin, hiMax, 6), c: tcdim}
+               , {t: RangeBar(lows[i], highs[i], loMin, hiMax, 6), c: tcrb}
                , { t: this.fixfix(highs[i] "°"), c: cc ? TempColor(highs[i], hiMin, hiMax) : tc }
                , this.emoji.get(Integer(codes[i]), "🌈")
                , pVal
