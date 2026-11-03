@@ -221,13 +221,14 @@ class Weather {
          ym adds a margin
          r8 means 8 rows
       */
-      this.Ctl.loc     := this.AddTextCtl(fs("w280"),                    this.userName,    fs("s11 Bold") " cA6ADC8", "Segoe UI")  ; Los Angeles
+      wid := 295 * this.fontScaleFactor ; hand tune this
+      this.Ctl.loc     := this.AddTextCtl(fs("w" wid),                    this.userName,    fs("s11 Bold") " cA6ADC8", "Segoe UI")  ; Los Angeles
 
       this.Ctl.temp    := this.AddTextCtl(fs("w78 y+2") " Right",        "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; 75
       this.Ctl.AQI     := this.AddTextCtl(fs("w43 x+0 yp+12") " Right",  "---",        fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; 34 same row
       this.Ctl.AQIlab  := this.AddTextCtl(fs("w30 x+2 yp+13"),           "aqi",        fs("s9")  " cA6ADC8 Norm", "Segoe UI")  ; aqi same row
 
-      this.Ctl.hilo    := this.AddTextCtl(fs("w280 xm y+20"),            "Loading...", fs("s11") " cCDD6F4 Norm", "Segoe UI")  ; H/L temp
+      this.Ctl.hilo    := this.AddTextCtl(fs("w" wid " xm y+20"),            "Loading...", fs("s11") " cCDD6F4 Norm", "Segoe UI")  ; H/L temp
       this.Ctl.cond    := this.AddTextCtl("wp xp-8 yp Right",,                         fs("s11") " cCDD6F4 Bold", "Segoe UI")  ; Partly Cloudy on right
 
       this.Ctl.detail  := this.AddTextCtl(fs("wp xm y+8"),,                            fs("s11") " cc7cfeb Norm", "Segoe UI")  ; Feels like ...
@@ -239,34 +240,32 @@ class Weather {
       ; The grids take their row height from the GUI font in effect here (r<N> sizing), so match it to the grid font
       this.Gui.SetFont(fs("S10") " Norm", "Segoe UI")
       ; Column widths are measured from the text; only the gaps (DIPs, scaled with fs like everything else) are tuned
-      this.Ctl.hourly := this.Gui.AddD2DGrid(fs("w280 xm y+8") " r" (this.maxRows + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write grid for emojis
+      this.Ctl.hourly := this.Gui.AddD2DGrid(fs("w" wid " xm y+8") " r" (this.maxRows + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write grid for emojis
       this.Ctl.hourly.SetColumns([ ; gap is after the entry
-         {al: "Right", w: "auto", gap: fs(10)},    ; time
+         {al: "Right", w: "auto", gap: fs(10)},   ; time
          {al: "Right", w: "auto", gap: fs(4)},    ; temp
-         {al: "Left",  w: "auto", gap: fs(12)},   ; condition icon
+         {al: "Center",  w: "auto", gap: fs(12)},   ; condition icon
          {al: "Right", w: "auto", gap: fs(10)},   ; aqi
          {al: "Right", w: "auto", gap: fs(12)},   ; precip %
          {al: "Right", w: "auto", gap: fs(2)},    ; wind speed
-         {al: "Right", w: "auto", gap: fs(2)},    ; "-"
+         {al: "Center", w: "auto", gap: fs(2)},    ; "-"
          {al: "Right", w: "auto", gap: fs(6)},    ; wind speed gusts
          {al: "Left",  w: "auto"}])               ; wind direction
       this.Ctl.daily  := this.Gui.AddD2DGrid(fs("wp y+8") " r" (this.forecastDays + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write grid for emojis
       this.Ctl.daily.SetColumns([
-         {al: "Left",  w: "auto", gap: fs(10)},   ; day
-         {al: "Right", w: "auto", gap: fs(4)},    ; low
-         {al: "Left",  w: "auto", gap: fs(4)},    ; "to"
-         {al: "Right", w: "auto", gap: fs(4)},    ; high
-         {al: "Left",  w: "auto", gap: fs(12)},   ; condition icon
+         {al: "Left",  w: "auto", gap: fs(7)},   ; day
+         {al: "Right", w: "auto", gap: fs(2)},    ; low
+         {al: "Left",  w: "auto", gap: fs(2)},    ; "rangeBar
+         {al: "Right", w: "auto", gap: fs(0)},    ; high
+         {al: "Left",  w: "auto", gap: fs(7)},   ; condition icon
          {al: "Right", w: "auto", gap: fs(3)},    ; precip amount
          {al: "Left",  w: "auto", gap: fs(2)},    ; precip unit
-         {al: "Left",  w: "auto", gap: fs(12)},   ; precip icon
+         {al: "Left",  w: "auto", gap: fs(7)},   ; precip icon
          {al: "Right", w: "auto", gap: fs(2)},    ; wind speed
-         {al: "Right", w: "auto", gap: fs(2)},    ; "-"
-         {al: "Right", w: "auto", gap: fs(6)},    ; wind speed gusts
          {al: "Left",  w: "auto"}])               ; wind direction
       this.Ctl.updated := this.AddTextCtl(fs("wp y+8"),,                                fs("s9")  " c7F849C", "Segoe UI")  ; overlay1
       this.ActiveIcon := ""
-      this.Ctl.Icon    := g.AddPicture(fs("H96 W96 X184 Y0"))      ; Pretty up the window
+      this.Ctl.Icon := g.AddPicture(fs("H96 W96 X" wid - 96 " Y0"))      ; X is width - 96
       if (this.dpi() > 96)
          this.DropShadow(g.hWnd) ; also border
       else
@@ -824,7 +823,7 @@ class Weather {
       ;-----------------------------------------------------------------------
       ; Daily Forecast
       ;-----------------------------------------------------------------------
-      rnd := this.mks ? 1 : 2
+      rnd := this.mks ? 0 : 1
       If (this.forecastDays) {
          rows := []
          lows := [], highs := []
@@ -847,36 +846,36 @@ class Weather {
             w := winds[i]
             g := windg[i]
             c := dirs[i]
+            ; ― = HORIZONTAL BAR
+            ; — = Em Dash, same as Horz bar
             If i == 1
                rows.Push([
                  { t: "Day", al: "Left", c: hc }
-               , { t: "―Temp―", span: 4, al: "Center", c: hc }
+               , { t: "―――Temp―――", span: 4, al: "Center", c: hc }
                , { t: "―Prec―", span: 3, al: "Center", c: hc }
-               , { t: "Wind" wsu, span: 4, al: "Center", c: hc }
+               , { t: "W" wsu, span: 2, al: "Center", c: hc }
                ])
-            ; TODO - can use rain_sum or showers_sum vs precipitation_sum to determine showfall
             psum := IsNumber(preps[i]) ? Number(preps[i]) : 0 ; total water precepitation in / mm
             ssum := IsNumber(snows[i]) ? Number(snows[i]) : 0 ; total rainfall precepitation in / cm
             If (psum < 0.01)
-               pVal := Round(ssum, rnd), pUnit := this.mks ? "mm" : "in", pIcon := ""
+               pVal := Round(ssum, rnd), pUnit := this.mks ? "㎜" : "'", pIcon := ""
             Else If ((this.mks ? ssum : ssum / 10) >= psum * 0.5) ; Assume snow is 10:1 expansion for water
-               pVal := Round(ssum, rnd), pUnit := this.mks ? "cm" : "in", pIcon := "❄"
+               pVal := Round(ssum, rnd), pUnit := this.mks ? "㎝" : "'", pIcon := "❄"
             Else
-               pVal := Round(psum, rnd), pUnit := this.mks ? "mm" : "in", pIcon := "🌧️"
+               pVal := Round(psum, rnd), pUnit := this.mks ? "㎜" : "'", pIcon := "💧"
+            gusting := g >= w + (this.mks ? 8 : 5) ? true : false
 
             rows.Push([
                i == 1 ? "Today" : FormatTime(Trim(StrReplace(days[i], '-'), '"'), "ddd")
                , { t: this.fixfix(lows[i] "°"), c: cc ? TempColor(lows[i], loMin, loMax) : tc }
-               , "🠊"
+               , {t: RangeBar(lows[i], highs[i], loMin, hiMax, 6), c: tcdim}
                , { t: this.fixfix(highs[i] "°"), c: cc ? TempColor(highs[i], hiMin, hiMax) : tc }
                , this.emoji.get(Integer(codes[i]), "🌈")
                , pVal
                , pUnit
                , pIcon
-               , isnumber(w) ? round(w) : "--"
-               , "-" 
-               , isnumber(g) ? Round(g) : "--"
-               , isnumber(c) ? Compass(c) : ""
+               , gusting ? Round(g, 0) : Round(w, 0)
+               , gusting ? "🌀" : ""   ;💨🌀🍃
             ])
          }
          this.Ctl.daily.SetRows(rows)
@@ -914,16 +913,56 @@ class Weather {
          return ["🡓","🡗N","🡗","🡗E","🡐","🡔E","🡔","🡔S","🡑","S🡕","🡕","W🡕","🡒","W🡖","🡖","N🡖"][Mod(Round(deg / 22.5), 16) + 1]
       }
       static daynight(dn) => !IsNumber(dn) ? "?" : dn ? "🌞" : "🌙"
+      ; This version is a bit more subtle
       Static TempColor(v, lo, hi) {
-         Static stops := [0x4A90FF, 0x3CCBC4, 0xFFD23F, 0xFF3B30]
-         t     := hi > lo ? (v - lo) * 768 // (hi - lo) : 384   ; 0..768, three 256-wide segments
-         seg   := Min(t // 256, 2), f := t - seg * 256
-         a     := stops[seg + 1],   b := stops[seg + 2]
-         r     := ((a >> 16 & 255) * (256 - f) + (b >> 16 & 255) * f) >> 8
-         g     := ((a >> 8 & 255) * (256 - f) + (b >> 8 & 255) * f) >> 8
-         bl    := ((a & 255) * (256 - f) + (b & 255) * f) >> 8
+       ; Static stops := ["0x74a2ec", "0x61cbc6", "0xe8ce78", "0xed837d"]
+      ;  Static stops := ["0x89B4FA", "0xBAC2DE", "0xFAB387"]     ; soft blue -> pale neutral -> soft peach
+         Static stops := ToInts("0x7cacf8", "0x61cbc6", "0xf8dc80", "0xFAB387")
+         n   := stops.Length - 1
+         t   := hi > lo ? (v - lo) * n * 256 // (hi - lo) : n * 128   ; 0..n*256, one 256-wide segment per pair of stops
+         seg := Min(t // 256, n - 1), f := t - seg * 256
+         a   := stops[seg + 1], b := stops[seg + 2]
+         r   := ((a >> 16 & 255) * (256 - f) + (b >> 16 & 255) * f) >> 8
+         g   := ((a >> 8 & 255) * (256 - f) + (b >> 8 & 255) * f) >> 8
+         bl  := ((a & 255) * (256 - f) + (b & 255) * f) >> 8
          Return (r << 16) | (g << 8) | bl
+         /** Converts hex strings to integers, in place. */
+         Static ToInts(v*) {
+            local i, s
+            For i, s in v
+               v[i] := Integer(s)
+            Return v
+         }         
       }
+      /**
+       * Range bar for one day's low/high relative to the lowest low and highest high of all days shown.
+       * n cells at half-cell resolution: █ ▌ ▐ inside the range, ░ outside. Pass Round()ed integers.
+       */
+      Static RangeBar(lo, hi, minLo, maxHi, n := 6) {
+         Static glyphs := [[" ", 0, 0], ["▏", 0, 1], ["▎", 0, 2], ["▍", 0, 3], ["▌", 0, 4], ["▋", 0, 5]
+                        , ["▊", 0, 6], ["▉", 0, 7], ["█", 0, 8], ["▐", 4, 8], ["▕", 7, 8]]   ; [glyph, filled from, filled to] in eighths
+         span := Max(maxHi - minLo, 1)
+         u := 8 * n                                                        ; eighth-cell units
+         s := Max(0, Min(u - 1, (lo - minLo) * u // span))                 ; first filled unit
+         e := Max(s + 1, Min(u, ((hi - minLo) * u + span - 1) // span))    ; one past the last filled unit, at least one
+         bar := ""
+         Loop n {
+            c0 := (A_Index - 1) * 8
+            a := Max(s, c0) - c0, b := Min(e, c0 + 8) - c0                 ; covered part of this cell, 0..8
+            If (b <= a) {
+               bar .= glyphs[1][1]
+               Continue
+            }
+            best := 99, pick := glyphs[1][1]
+            For g in glyphs {
+               d := Abs(g[2] - a) + Abs(g[3] - b)
+               If (d < best)
+                  best := d, pick := g[1]
+            }
+            bar .= pick
+         }
+         Return bar
+      }      
    }
 
    Static Dpi()               => DllCall("GetDpiForWindow", "Ptr", Weather.Gui.Hwnd, "UInt")

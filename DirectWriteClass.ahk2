@@ -729,7 +729,7 @@ class D2DGrid extends D2DText {
                lay := this._NewLayout(t, &tw)
                if span = 1 && !(c.HasProp("w") && (c.w is Number))
                   c.cw := Max(c.cw, tw)
-               items.Push({p: lay, ci: ci, span: span
+               items.Push({p: lay, ci: ci, span: span, tw: tw
                   , al: IsObject(cell) && cell.HasProp("al") ? D2DGrid._Al(cell.al) : c.a
                   , c: IsObject(cell) && cell.HasProp("c") ? D2DText._ToRGB(cell.c) : ""})
             }
@@ -737,14 +737,33 @@ class D2DGrid extends D2DText {
          }
          this._items.Push(items)
       }
+      ; span cells (headers): if the text is wider than the columns and gaps it covers,
+      ; widen the last covered auto column so the text can't overflow the grid's right edge
+      for items in this._items
+         for it in items {
+            if it.span < 2
+               continue
+            e := cols[it.ci + it.span - 1]
+            if e.HasProp("w") && (e.w is Number)
+               continue                                           ; fixed-width column: leave it alone
+            cov := 0
+            Loop it.span {
+               c := cols[it.ci + A_Index - 1]
+               cov += c.cw
+               if A_Index < it.span
+                  cov += c.HasProp("gap") ? c.gap : this._gap
+            }
+            if it.tw > cov
+               e.cw += it.tw - cov
+         }
       ; column positions (natural)
       x := this._pad
       for c in cols {
          c.x := x
          x += c.cw + (c.HasProp("gap") ? c.gap : this._gap)
       }
-      this._natW := nc ? cols[nc].x + cols[nc].cw + this._pad : 2 * this._pad   ; natural width, before any stretching      ; stretch: spread the surplus over the inner gaps in proportion to their size, so tight pairs stay tight
-
+      this._natW := nc ? cols[nc].x + cols[nc].cw + this._pad : 2 * this._pad   ; natural width, before any stretching
+      ; stretch: spread the surplus over the inner gaps in proportion to their size, so tight pairs stay tight
       if this._justify && nc > 1 && dw > this._natW {
          extra := dw - this._natW
          tot := 0
