@@ -216,8 +216,8 @@ class Weather {
       }
       /** @type {Gui} */
       g := this.Gui := Gui("-Caption +ToolWindow +Border +DPIScale +E0x02000000")
-      g.BackColor := "1E1E2E"
-      g.MarginX := fs(10), g.MarginY := fs(8)
+      this.BackColor := g.BackColor := "1E1E2E"
+      g.MarginX := fs(12), g.MarginY := fs(10)
       /*
          y+N is relative to the bottom edge of the previous control.
          yp+N is relative to the top edge (Y position) of the previous control. p = previous
@@ -235,7 +235,7 @@ class Weather {
 
       this.Ctl.detail  := this.AddTextCtl(fs("wp xm y+8"),,                            fs("s11") " cc7cfeb Norm", "Segoe UI")  ; Feels like ...
 
-      this.Gui.SetFont(fs("S14"), "Consolas")
+      this.Gui.SetFont(fs("S12"), "Consolas")
       this.Ctl.srss   := this.Gui.AddD2DText(fs("w200 xm y+8"), ,                   "Segoe UI", fs(12), "f3f4cd")   ; Sunrise/Sunset
       this.Gui.SetFont(fs("S22"), "Consolas")
       this.Ctl.moon   := this.Gui.AddD2DText(fs("w50 x+8 yp-6 Right"), ,            "Segoe UI", fs(20), "f3f4cd")   ; Moon phase, larger
@@ -270,7 +270,7 @@ class Weather {
          {al: "Left",  w: "auto"}])               ; wind direction
       this.Ctl.updated := this.AddTextCtl(fs("wp y+8"),,                                fs("s9")  " c7F849C", "Segoe UI")  ; overlay1
       this.ActiveIcon := ""
-      this.Ctl.Icon    := g.AddPicture(fs("H96 W96 X175 Y0"))      ; Pretty up the window
+      this.Ctl.Icon    := g.AddPicture(fs("H96 W96 X184 Y0"))      ; Pretty up the window
       if (this.dpi() > 96)
          this.DropShadow(g.hWnd) ; also border
       else
@@ -585,7 +585,11 @@ class Weather {
          SendMessage(0x000B, 1, 0, , this.Gui.hwnd)   ; WM_SETREDRAW on
       }
       ; Everything updated, now refresh all at once
+      ; Change backcolor outside of WM_SETREDRAW off
       this.RefresMe()
+      If (this.Gui.BackColor != this.BackColor) {
+         this.Gui.BackColor := this.BackColor ; triggers a repaint
+      }
       SetTimer(this.cbUpdateData, ok ? this.Interval * 60000 : -60000)
       this.PruneMemory()
       OutputDebug("WeatherWidget: Updated Weather and Air Quality for " this.name)
@@ -721,10 +725,7 @@ class Weather {
       localNow := DateAdd(A_NowUTC, off, "Seconds")
 
       ; change background if transitioning from day ⬌ Night
-      bgc := isDay ? "1E1E2E" : "11111B"
-      If (this.Gui.BackColor != bgc) {
-         this.Gui.BackColor := bgc
-      }
+      this.BackColor:= isDay ? "1E1E2E" : "11111B"
       ;-----------------------------------------------------------------------
       ; Constants
       ;-----------------------------------------------------------------------
