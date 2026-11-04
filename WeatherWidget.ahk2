@@ -38,6 +38,7 @@ class Weather {
    Static ColorCodeDaily  := 1
    Static Assets          := A_ScriptDir . "\Assets\"
    Static Model           := "auto"
+   Static _dispOn := true
   /*
       WMO Weather Codes Reference
       Code	      Description
@@ -605,16 +606,39 @@ class Weather {
          WinMove(nx, ny, , , GuiOrCtrlObj)
    }
    /**
+    * Returns true if any part of the window lies on an attached monitor.
+    * @param {Gui|Integer} hGui A Gui object or its Hwnd.
+    * @returns {Boolean}
+    */
+   Static IsOnMonitor(hGui) {
+      hGui := IsObject(hGui) ? hGui.Hwnd : hGui
+      Return !!DllCall("MonitorFromWindow", "Ptr", hGui, "UInt", 0, "Ptr")   ; MONITOR_DEFAULTTONULL
+   }   
+   /**
+    * Returns true if the display is on (or dimmed), false if Windows has turned it off.
+    * The first call registers for display-state notifications using the GUI's window; until the first
+    * notification arrives (normally right after registering) the display is assumed to be on.
+    * @param {Gui|Integer} hGui A Gui object or its Hwnd.
+    * @returns {Boolean}
+    */
+   Static IsMonitorOn(*) => this._dispOn
+   /**
     * Refresh the weather and Air Quality data
     * Reschedule the timer depending on result
     */
    Static RefreshData(*) {
-      SendMessage(0x000B, 0, 0, , this.Gui.hwnd)   ; WM_SETREDRAW , helps with flicker
+      hwnd := this.Gui.Hwnd
+      If !this.IsOnMonitor(hwnd) || !this.IsMonitorOn(hwnd) {
+         OutputDebug("WeatherWidget: Monitor not active, skipping")
+         SetTimer(this.cbUpdateData, -60000)         ; retry in a minute; a successful run restores the normal interval
+         Return
+      }
+      SendMessage(0x000B, 0, 0, , hwnd)   ; WM_SETREDRAW , helps with flicker
       Try {
          ok := this.UpdateAirQuality()
          ok := this.UpdateWeather() && ok
-      } finally {
-         SendMessage(0x000B, 1, 0, , this.Gui.hwnd)   ; WM_SETREDRAW on
+      } Finally {
+         SendMessage(0x000B, 1, 0, , hwnd)   ; WM_SETREDRAW on
       }
       ; Everything updated, now refresh all at once
       ; Change backcolor outside of WM_SETREDRAW off
@@ -902,7 +926,7 @@ class Weather {
             rows.Push([
                i == 1 ? "Today" : FormatTime(Trim(StrReplace(days[i], '-'), '"'), "ddd")
                , { t: this.fixfix(lows[i] "°"), c: cc ? TempColor(lows[i], loMin, loMax) : tc }
-               , {t: RangeBar(lows[i], highs[i], loMin, hiMax, 6), c: "0x4f7b92"} ;tcrb
+               , { t: RangeBar(lows[i], highs[i], loMin, hiMax, 6, i==1 ? tf : unset), c: "0x4f7b92"} ;tcrb
                , { t: this.fixfix(highs[i] "°"), c: cc ? TempColor(highs[i], hiMin, hiMax) : tc }
                , this.emoji.get(Integer(codes[i]), "🌈")
                , pVal
@@ -972,15 +996,23 @@ class Weather {
        * Range bar for one day's low/high relative to the lowest low and highest high of all days shown.
        * n cells at half-cell resolution: █ ▌ ▐ inside the range, ░ outside. Pass Round()ed integers.
        */
-      Static RangeBar(lo, hi, minLo, maxHi, n := 6) {
-         Static glyphs := [[" ", 0, 0], ["▏", 0, 1], ["▎", 0, 2], ["▍", 0, 3], ["▌", 0, 4], ["▋", 0, 5]
+      Static RangeBar(lo, hi, minLo, maxHi, n := 6, today?) {
+         Static marker := "⭕" ;
+         Static glyphs := [[" ", 0, 0], ["▏", 0, 1], ["▎", 0, 2], ["▍", 0, 3], ["▌", 0, 4], ["▋", 0, 5]
                         , ["▊", 0, 6], ["▉", 0, 7], ["█", 0, 8], ["▐", 4, 8], ["▕", 7, 8]]   ; [glyph, filled from, filled to] in eighths
          span := Max(maxHi - minLo, 1)
          u := 8 * n                                                        ; eighth-cell units
          s := Max(0, Min(u - 1, (lo - minLo) * u // span))                 ; first filled unit
          e := Max(s + 1, Min(u, ((hi - minLo) * u + span - 1) // span))    ; one past the last filled unit, at least one
+         m := (IsSet(today) && today != "")                                ; marker cell, 0 = none
+            ? Max(1, Min(n, (Round(today) - minLo) * n // span + 1))
+            : 0
          bar := ""
          Loop n {
+            If (A_Index = m) {
+               bar .= marker
+               Continue
+            }
             c0 := (A_Index - 1) * 8
             a := Max(s, c0) - c0, b := Min(e, c0 + 8) - c0                 ; covered part of this cell, 0..8
             If (b <= a) {
@@ -996,7 +1028,7 @@ class Weather {
             bar .= pick
          }
          Return bar
-      }      
+      }
    }
 
    Static Dpi()               => DllCall("GetDpiForWindow", "Ptr", Weather.Gui.Hwnd, "UInt")
@@ -1271,6 +1303,7 @@ SetupEventMonitoring() {
    cbPowerChangeEvent(wParam, lParam, Msg, hWnd) {
       Static PBT_APMRESUMESUSPEND := 0x7, PBT_APMRESUMEAUTOMATIC := 0x12
       Static PBT_POWERSETTINGCHANGE := 0x8013
+    
       Switch wParam {
          Case PBT_APMRESUMESUSPEND, PBT_APMRESUMEAUTOMATIC:
             Weather.RefreshMe()
@@ -1278,14 +1311,19 @@ SetupEventMonitoring() {
             SetTimer(Weather.cbUpdateData, -10000)
             OutputDebug("WeatherWidget: Resume from Suspension")
          Case PBT_POWERSETTINGCHANGE:
-            ; POWERBROADCAST_SETTING: GUID (16) + DataLength (4) + Data
-            ; Data: 0 = off, 1 = on, 2 = dimmed, ignore initial trigger at launch
-            If (A_TickCount > (Weather.Launched + 60000) AND NumGet(lParam, 20, "UChar") = 1) {
+         ; POWERBROADCAST_SETTING: GUID (16) + DataLength (4) + Data
+            ; Data: 0 = off, 1 = on, 2 = dimmed
+            If NumGet(lParam, 0, "Int64") != 0x47A0704A6FE69556    ; only GUID_CONSOLE_DISPLAY_STATE
+               Return
+            state := NumGet(lParam, 20, "UChar")
+            Weather._dispOn := state != 0                          ; track always, including the first 60 s
+            ; ignore initial trigger at launch for the refresh
+            If (A_TickCount > (Weather.Launched + 60000) AND state = 1) {
                Weather.RefreshMe()
                SetTimer(Weather.cbUpdateData, -5000)
                OutputDebug("WeatherWidget: PBT_POWERSETTINGCHANGE")
-            }
-
+            } else if (state == 0)             ; POWERBROADCAST_SETTING: GUID (16) + DataLength (4) + Data
+               SetTimer(Weather.cbUpdateData, 0)
          Default:
       }
    }

@@ -321,6 +321,12 @@ class D2DText {
             ctrl.D2D.Refresh()
    }
    /**
+    * Returns if the window is occluded or now
+    */
+   Static IsOccluded() {
+      Return (ComCall(57, this._rt, "Int") & 1)
+   }
+   /**
     * Paints immediately: fills with the GUI's BackColor (transparent look) and draws the text. Called from _OnPaint and __New;
     * use Refresh() for everything else. If the device was lost (D2DERR_RECREATE_TARGET),
     * the render target is rebuilt and drawing is retried.
@@ -377,9 +383,11 @@ class D2DText {
          , "Int", 0
          , "Int")   ; DrawText (void)
    }
-   /** Window was occluded, so try again shortly. Gives up after ~10 s or if the control is hidden (Show repaints it). */
+   /** Window was occluded, so try again shortly. Gives up after ~10 s or if the control is hidden (Show repaints it). 
+    *  This may happen if the windows is on an offscreen monitor
+   */
    _RetryLater() {
-      If (this._retry++ >= 20 || !DllCall("IsWindowVisible", "Ptr", this._ctrl.Hwnd))
+      If (this._retry++ >= 3 || !DllCall("IsWindowVisible", "Ptr", this._ctrl.Hwnd))
          Return
       SetTimer(this._RetryDraw.Bind(this), -500)
    }
@@ -545,6 +553,7 @@ class D2DText {
     * Returns 0 to skip the static control's own painting.
     */
    _OnPaint() {
+      Critical()
       ps := Buffer(A_PtrSize = 8 ? 72 : 64, 0)                     ; PAINTSTRUCT
       DllCall("BeginPaint", "Ptr", this._ctrl.Hwnd, "Ptr", ps, "Ptr")
       this.Draw()
@@ -711,86 +720,92 @@ class D2DGrid extends D2DText {
     * @param {Number} dw Control width in DIPs; 0 = natural width (no stretching).
     */
    _Layout(dw := 0) {
-      this._FreeLayouts()
-      this._lastW := dw
-      cols := this._cols, nc := cols.Length
-      for c in cols
-         c.cw := (c.HasProp("w") && (c.w is Number)) ? c.w : 0
-      ; pass 1: create layouts, auto columns take the widest single-column cell
-      for row in this._rows {
-         items := [], ci := 1
-         for cell in row {
-            if ci > nc
-               break
-            span := Min(D2DGrid._Span(cell), nc - ci + 1)
-            t := D2DGrid._T(cell)
-            if t != "" {
-               c := cols[ci]
-               lay := this._NewLayout(t, &tw)
-               if span = 1 && !(c.HasProp("w") && (c.w is Number))
-                  c.cw := Max(c.cw, tw)
-               items.Push({p: lay, ci: ci, span: span, tw: tw
-                  , al: IsObject(cell) && cell.HasProp("al") ? D2DGrid._Al(cell.al) : c.a
-                  , c: IsObject(cell) && cell.HasProp("c") ? D2DText._ToRGB(cell.c) : ""})
+      prev := Critical()
+      Try {
+         this._FreeLayouts()
+         this._lastW := dw
+         cols := this._cols, nc := cols.Length
+         For c in cols
+            c.cw := (c.HasProp("w") && (c.w is Number)) ? c.w : 0
+         ; pass 1: create layouts, auto columns take the widest single-column cell
+         For row in this._rows {
+            items := [], ci := 1
+            For cell in row {
+               If ci > nc
+                  Break
+               span := Min(D2DGrid._Span(cell), nc - ci + 1)
+               t := D2DGrid._T(cell)
+               If t != "" {
+                  c := cols[ci]
+                  lay := this._NewLayout(t, &tw)
+                  If span = 1 && !(c.HasProp("w") && (c.w is Number))
+                     c.cw := Max(c.cw, tw)
+                  items.Push({ p: lay, ci: ci, span: span, tw: tw
+                     , al: IsObject(cell) && cell.HasProp("al") ? D2DGrid._Al(cell.al) : c.a
+                     , c: IsObject(cell) && cell.HasProp("c") ? D2DText._ToRGB(cell.c) : "" })
+               }
+               ci += span
             }
-            ci += span
+            this._items.Push(items)
          }
-         this._items.Push(items)
-      }
-      ; span cells (headers): if the text is wider than the columns and gaps it covers,
-      ; widen the last covered auto column so the text can't overflow the grid's right edge
-      for items in this._items
-         for it in items {
-            if it.span < 2
-               continue
-            e := cols[it.ci + it.span - 1]
-            if e.HasProp("w") && (e.w is Number)
-               continue                                           ; fixed-width column: leave it alone
-            cov := 0
-            Loop it.span {
-               c := cols[it.ci + A_Index - 1]
-               cov += c.cw
-               if A_Index < it.span
-                  cov += c.HasProp("gap") ? c.gap : this._gap
+         ; span cells (headers): if the text is wider than the columns and gaps it covers,
+         ; widen the last covered auto column so the text can't overflow the grid's right edge
+         For items in this._items
+            For it in items {
+               If it.span < 2
+                  Continue
+               e := cols[it.ci + it.span - 1]
+               If e.HasProp("w") && (e.w is Number)
+                  Continue                                           ; fixed-width column: leave it alone
+               cov := 0
+               Loop it.span {
+                  c := cols[it.ci + A_Index - 1]
+                  cov += c.cw
+                  If A_Index < it.span
+                     cov += c.HasProp("gap") ? c.gap : this._gap
+               }
+               If it.tw > cov
+                  e.cw += it.tw - cov
             }
-            if it.tw > cov
-               e.cw += it.tw - cov
+         ; column positions (natural)
+         x := this._pad
+         For c in cols {
+            c.x := x
+            x += c.cw + (c.HasProp("gap") ? c.gap : this._gap)
          }
-      ; column positions (natural)
-      x := this._pad
-      for c in cols {
-         c.x := x
-         x += c.cw + (c.HasProp("gap") ? c.gap : this._gap)
-      }
-      this._natW := nc ? cols[nc].x + cols[nc].cw + this._pad : 2 * this._pad   ; natural width, before any stretching
-      ; stretch: spread the surplus over the inner gaps in proportion to their size, so tight pairs stay tight
-      if this._justify && nc > 1 && dw > this._natW {
-         extra := dw - this._natW
-         tot := 0
-         for i, c in cols
-            if i < nc
-               tot += c.HasProp("gap") ? c.gap : this._gap
-         acc := 0
-         for i, c in cols {
-            c.x += acc
-            if i < nc {
-               g := c.HasProp("gap") ? c.gap : this._gap
-               acc += extra * (tot > 0 ? g / tot : 1 / (nc - 1))
+         this._natW := nc ? cols[nc].x + cols[nc].cw + this._pad : 2 * this._pad   ; natural width, before any stretching
+         ; stretch: spread the surplus over the inner gaps in proportion to their size, so tight pairs stay tight
+         If this._justify && nc > 1 && dw > this._natW {
+            extra := dw - this._natW
+            tot := 0
+            For i, c in cols
+               If i < nc
+                  tot += c.HasProp("gap") ? c.gap : this._gap
+            acc := 0
+            For i, c in cols {
+               c.x += acc
+               If i < nc {
+                  g := c.HasProp("gap") ? c.gap : this._gap
+                  acc += extra * (tot > 0 ? g / tot : 1 / (nc - 1))
+               }
             }
          }
+         ; pass 2: fit each layout to the box of the columns it covers, and set its alignment
+         rh := this._lineH
+         For items in this._items
+            For it in items {
+               c := cols[it.ci], e := cols[it.ci + it.span - 1]
+               it.x := c.x
+               ComCall(28, it.p, "Float", e.x + e.cw - c.x)         ; SetMaxWidth
+               ComCall(29, it.p, "Float", rh)                       ; SetMaxHeight
+               If it.al != this._align
+                  ComCall(3, it.p, "Int", it.al)                    ; SetTextAlignment (the layout was created with this._align)
+            }
+         this._dirty := false
+      } Finally {
+         ; Restore what ever critical we had before
+         Critical(prev)
       }
-      ; pass 2: fit each layout to the box of the columns it covers, and set its alignment
-      rh := this._lineH
-      for items in this._items
-         for it in items {
-            c := cols[it.ci], e := cols[it.ci + it.span - 1]
-            it.x := c.x
-            ComCall(28, it.p, "Float", e.x + e.cw - c.x)         ; SetMaxWidth
-            ComCall(29, it.p, "Float", rh)                       ; SetMaxHeight
-            if it.al != this._align
-               ComCall(3, it.p, "Int", it.al)                    ; SetTextAlignment (the layout was created with this._align)
-         }
-      this._dirty := false
    }
 
    _Render(rt, w, h) {
