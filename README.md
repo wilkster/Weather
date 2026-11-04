@@ -190,6 +190,7 @@ FullName=Denver, Colorado, United States
 | `Hours Increment` | computer name | Hours between hourly rows | 3 |
 | `Max Rows` | computer name | Number of hourly rows | 8 |
 | `FontScaling` | computer name | Display scale factor | 1 |
+| `Model` | computer name | Weather Model to Use | auto |
 | `OnTop` | computer name | 1 = always on top | 0 |
 | `MKS` | computer name | 1 = metric units | 0 |
 | `X`, `Y` | computer name | Saved window position | 0, 0 |
