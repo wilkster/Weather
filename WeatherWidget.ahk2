@@ -158,7 +158,6 @@ class Weather {
       this.iniFile := A_ScriptDir "\WeatherWidget.ini"
       this.NeedGeo := 1
       this.hourlyAQI := Map()
-      this.Launched := A_TickCount
 
       ; Set default locations
       this.userName := IniRead(this.iniFile, A_ComputerName, "Loc", "")
@@ -197,7 +196,7 @@ class Weather {
       g := this.BuildGUI(X?, Y?)
       OnMessage(0x404, this.TrayMessage.Bind(this))
       this.cbUpdateData := this.RefreshData.bind(this)
-      If (ComObject("{DCB00C01-570F-4A9B-8D69-199FDBA5723B}").IsConnectedToInternet) {
+      If (this.hasInternet) {
          this.RefreshData()
       } Else {
          MsgBox("You do not seem to be connected to the internet which is required for data")
@@ -206,6 +205,7 @@ class Weather {
       OnExit this.SaveOnExit.bind(this)
       Sleep(100)
    }
+   Static hasInternet => ComObject("{DCB00C01-570F-4A9B-8D69-199FDBA5723B}").IsConnectedToInternet
    /**
     * Build/Rebuild the GUI
     * @returns {unset?} 
@@ -225,7 +225,7 @@ class Weather {
          ym adds a margin
          r8 means 8 rows
       */
-      wid := 295 ; hand tune this
+      wid := 310 ; hand tune this
       this.Ctl.loc     := this.AddTextCtl(fs("w" wid),                    this.userName,    fs("s11 Bold") " cA6ADC8", "Segoe UI")  ; Los Angeles
 
       this.Ctl.temp    := this.AddTextCtl(fs("w78 y+2") " Right",        "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; 75
@@ -408,20 +408,39 @@ class Weather {
       this.Menu := Menu()
       ; Read the whole section to so retain order in the file vs by number
       ; This allows duplicate entries or just loc=.......
-      If (FileExist(this.iniFile)) {
-         this.Menu.Add("Manage Locations", (*) => LocationManager.Show())  ; Creates a new menu item.
-         Try this.Menu.SetIcon("Manage Locations", this.Assets "Location.Ico")
-         this.Menu.Add()
-         maxLoc :=IniRead(this.iniFile, "Default", "Max Locations", 50)
-         for idx,loc in this.ReadLocations(this.iniFile) {
-            this.menu.add(loc, this.setlocation.bind(this))
+      locs := []
+      Try locs := this.ReadLocations(this.iniFile)
+      this.Menu.Add("Manage Locations", (*) => LocationManager.Show())
+      Try this.Menu.SetIcon("Manage Locations", this.Assets "Location.Ico")
+      this.Menu.Add()
+      If (locs.Length) {
+         maxLoc := IniRead(this.iniFile, "Default", "Max Locations", 50)
+         for idx, loc in locs {
+            this.Menu.Add(loc, this.SetLocation.Bind(this))
             if (loc = this.userName)
-               this.menu.Check(loc)
+               this.Menu.Check(loc)
             if idx >= maxLoc
                break
          }
-      } else
-         this.Menu.Add("Refresh now", this.cbUpdateData)
+      } Else
+         this.Menu.Add("Refresh now", this.cbUpdateData)      
+
+      ; If (FileExist(this.iniFile)) {
+      ;    this.Menu.Add("Manage Locations", (*) => LocationManager.Show())  ; Creates a new menu item.
+      ;    Try this.Menu.SetIcon("Manage Locations", this.Assets "Location.Ico")
+      ;    this.Menu.Add()
+      ;    maxLoc :=IniRead(this.iniFile, "Default", "Max Locations", 50)
+      ;    for idx,loc in this.ReadLocations(this.iniFile) {
+      ;       this.menu.add(loc, this.setlocation.bind(this))
+      ;       if (loc = this.userName)
+      ;          this.menu.Check(loc)
+      ;       if idx >= maxLoc
+      ;          break
+      ;    }
+      ; } Else {
+      ;    ; Add this if we don't yet have an INI file
+      ;    this.Menu.Add("Refresh now", this.cbUpdateData)
+      ; }
       this.Menu.add()
       this.Menu.Add("Display Max Hourly Rows", this.BuildNumMenu("maxRows", "Max Rows", 15,1, 0))
       this.Menu.Add("Display Hourly Interval", this.BuildNumMenu("hourIncrement", "Hours Increment", 6))
@@ -517,10 +536,10 @@ class Weather {
             this.userName := userName
             this.NeedGeo  := 0
             IniWrite(userName, this.iniFile, A_ComputerName, "Loc")
+            this.setModel(obj)
             If (!obj.cached) {
                this.cacheUserLocation(obj)
             }
-            this.setModel(obj)
          } Else {
             this.NeedGeo := 1
             this.Ctl.updated.Text := "Location lookup failed for " userName
@@ -540,16 +559,15 @@ class Weather {
     * @returns {Any} 
     */
    Static setModel(obj) {
-      Switch obj.Model {
-         Case "auto", "" :
-            if obj.CC = "us"
-               this.Model := obj.Model := "ncep_nbm_conus " ; best for US
-            else
-               this.Model := obj.Model := "auto"
-         ; Leave user overrides along
-         Default :
+      If (not obj.Model) {
+         If obj.FullName ~= "Hawaii|Alaska|Puerto Rico"
+            this.Model := obj.Model := "auto"
+         else If obj.CC = "us"
+            this.Model := obj.Model := "ncep_nbm_conus" ; best for US
+         Else
+            this.Model := obj.Model := "auto"
       }
-      return obj.Model
+      Return obj.Model
    }
    /**
     * Save a location object to the ini file for caching
@@ -618,29 +636,50 @@ class Weather {
     * Returns true if the display is on (or dimmed), false if Windows has turned it off.
     * The first call registers for display-state notifications using the GUI's window; until the first
     * notification arrives (normally right after registering) the display is assumed to be on.
-    * @param {Gui|Integer} hGui A Gui object or its Hwnd.
     * @returns {Boolean}
     */
    Static IsMonitorOn(*) => this._dispOn
+   Static IsScreenLocked(*) {
+      ; If it returns a handle, we must close it and report as unlocked.
+      If hDesktop := DllCall("User32\OpenInputDesktop", "Int", 0, "Int", 0, "Int", 0x100, "Ptr") {
+         DllCall("User32\CloseDesktop", "Ptr", hDesktop)
+         Return false
+      }
+      Return true
+   }
    /**
     * Refresh the weather and Air Quality data
     * Reschedule the timer depending on result
     */
    Static RefreshData(*) {
       hwnd := this.Gui.Hwnd
+      If (this.IsScreenLocked()) {
+         OutputDebug("WeatherWidget: Screen Is Locked, trying again in a minute")
+         SetTimer(this.cbUpdateData, -60000)         ; retry in a minute; a successful run restores the normal interval
+         Return         
+      }
       If !this.IsOnMonitor(hwnd) || !this.IsMonitorOn(hwnd) {
-         OutputDebug("WeatherWidget: Monitor not active, skipping")
+         OutputDebug("WeatherWidget: Monitor not active, trying again in a minute")
          SetTimer(this.cbUpdateData, -60000)         ; retry in a minute; a successful run restores the normal interval
          Return
       }
+      If ( Not this.hasInternet) {
+         this.Ctl.updated.Text := "No Internet Connection"
+         OutputDebug("No Internet connection detected, trying again in a minute")
+         SetTimer(this.cbUpdateData, -60000)         ; retry in a minute; a successful run restores the normal interval
+         Return
+      }
+      ; Perform the query now
       SendMessage(0x000B, 0, 0, , hwnd)   ; WM_SETREDRAW , helps with flicker
       Try {
          ok := this.UpdateAirQuality()
          ok := this.UpdateWeather() && ok
+         if (! OK)
+            OutputDebug("WeatherWidget: Query Failed, trying again in a minute")
       } Finally {
          SendMessage(0x000B, 1, 0, , hwnd)   ; WM_SETREDRAW on
       }
-      ; Everything updated, now refresh all at once
+      ; Everything updated, now refresh GUI all at once
       ; Change backcolor outside of WM_SETREDRAW off
       this.RefreshMe()
       If (this.Gui.BackColor != this.BackColor) {
@@ -722,7 +761,8 @@ class Weather {
          tu := "fahrenheit"
          pu := "inch"
       }
-      url := "https://api.open-meteo.com/v1/forecast?latitude=" this.Lat "&longitude=" this.Lon . (this.Model != "auto" ? "&models=ncep_nbm_conus" : "")
+      url := "https://api.open-meteo.com/v1/forecast?latitude=" this.Lat "&longitude=" this.Lon 
+         . (!(this.Model = "auto" || this.Model = "") ? "&models=" this.Model : "")
          . "&current=weather_code,temperature_2m,wind_gusts_10m,wind_speed_10m,wind_direction_10m,apparent_temperature,relative_humidity_2m,is_day"
          . "&hourly=weather_code,temperature_2m,precipitation_probability,wind_speed_10m,wind_gusts_10m,wind_direction_10m,is_day"
          . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,precipitation_probability_max,"
@@ -874,7 +914,6 @@ class Weather {
       rnd := this.mks ? 0 : 1
       If (this.forecastDays) {
          days  := this.List(day, "time")
-         daysAvailable := min(days.Length, this.forecastDays)
          tempMin := this.List(day, "temperature_2m_min")
          tempMax := this.List(day, "temperature_2m_max")
          rows := []
@@ -882,17 +921,16 @@ class Weather {
          ; Stop after valid values, the model may not have returned what we requested, they would be null in the array
          daysAvailable := 0
          Loop this.forecastDays {
-            Try {
-               lows.Push(Round(tempMin[A_Index]))
-               highs.Push(Round(tempMax[A_Index]))
-            } Catch {
-               Break               
-            }
+            l := tempMin[A_Index], h := tempMax[A_Index]
+            if !IsNumber(l) || !IsNumber(h)
+               break
+            lows.Push(Round(l)), highs.Push(Round(h))
             daysAvailable++
          }
-         loMin := Min(lows*),        loMax := Max(lows*)
-         hiMin := Min(highs*),       hiMax := Max(highs*)
-      ; oMin  := Min(loMin, hiMin), oMax  := Max(loMax, hiMax)
+         If (daysAvailable) {
+            loMin := Min(lows*), loMax := Max(lows*)
+            hiMin := Min(highs*), hiMax := Max(highs*)
+         } 
          winds := this.List(day, "wind_speed_10m_max")
          windg := this.List(day, "wind_gusts_10m_max")
          ; dirs  := this.List(day, "wind_direction_10m_dominant")
@@ -924,9 +962,9 @@ class Weather {
             gusting := g >= w + (this.mks ? 8 : 5) ? true : false
 
             rows.Push([
-               i == 1 ? "Today" : FormatTime(Trim(StrReplace(days[i], '-'), '"'), "ddd")
+               i == 1 ? "Today" : FormatTime(Trim(StrReplace(days[i], '-'), '"'), "dd ddd")
                , { t: this.fixfix(lows[i] "°"), c: cc ? TempColor(lows[i], loMin, loMax) : tc }
-               , { t: RangeBar(lows[i], highs[i], loMin, hiMax, 6, i==1 ? tf : unset), c: "0x4f7b92"} ;tcrb
+               , { t: RangeBar(lows[i], highs[i], loMin, hiMax, 6, i==1 ? tf : unset), c: "0x6ca8c7"} ;tcrb
                , { t: this.fixfix(highs[i] "°"), c: cc ? TempColor(highs[i], hiMin, hiMax) : tc }
                , this.emoji.get(Integer(codes[i]), "🌈")
                , pVal
@@ -970,7 +1008,6 @@ class Weather {
             return "?"
          return ["🡓","🡗N","🡗","🡗E","🡐","🡔E","🡔","🡔S","🡑","S🡕","🡕","W🡕","🡒","W🡖","🡖","N🡖"][Mod(Round(deg / 22.5), 16) + 1]
       }
-      static daynight(dn) => !IsNumber(dn) ? "?" : dn ? "🌞" : "🌙"
       ; This version is a bit more subtle
       Static TempColor(v, lo, hi) {
        ; Static stops := ["0x74a2ec", "0x61cbc6", "0xe8ce78", "0xed837d"]
@@ -1037,10 +1074,7 @@ class Weather {
    static List(sec, key)      => RegExMatch(sec, '"' key '":\[([^\]]*)\]', &m) ? StrSplit(m[1], ",") : []
    static Hour12(h)           => ((h := Mod(h, 24)) = 0 ? 12 : h > 12 ? h - 12 : h) (h < 12 ? " AM" : " PM")
    static fixfix(st)          => StrReplace(StrReplace(st," "," "),"-","‒")
-   Static FormatLR(left, right, total := 80) {
-      pad := Max(total - StrLen(left), StrLen(right))
-      Return Format("{1}{2:" pad "s}", left, right)
-   }
+
    /**
     * Brighten (pct > 0) or dim (pct < 0) a color while keeping the channel ratios, so the hue is unchanged.
     * Brightening stops when the brightest channel reaches 255 instead of clipping channels individually.
@@ -1119,29 +1153,8 @@ class Weather {
    }
    Static IsWindowVisible(hwndTry) => DllCall("User32.dll\IsWindowVisible", "Ptr", hwndTry)
    Static PruneMemory() => DllCall("psapi\EmptyWorkingSet", "ptr", -1)
-   Static IsTopVisible(hwnd) {
-      cloaked := Buffer(4)
-      cur := hwnd
-      while (cur := DllCall("GetWindow", "Ptr", cur, "UInt", 3, "Ptr")) {
-         if !DllCall("IsWindowVisible", "Ptr", cur) || DllCall("IsIconic", "Ptr", cur)
-            continue
-         DllCall("dwmapi\DwmGetWindowAttribute", "Ptr", cur, "UInt", 14, "Ptr", cloaked, "UInt", 4)
-         if NumGet(cloaked, 0, "UInt")
-            continue
-         return false
-      }
-      return true
-   }
-   Static FitGridWidth() {
-      need := Ceil(Max(this.Ctl.hourly.ContentW, this.Ctl.daily.ContentW))
-      If (need > this.gridW) {
-         this.gridW := need
-         this.Ctl.hourly.Move(, , need)
-         this.Ctl.daily.Move(, , need)
-         this.Gui.Show("NoActivate AutoSize")
-      }
-   }
-/**
+
+   /**
     * Return an object with the lat/long of some place
     * @param place Name of location
     * @returns {Integer | Object}  n.lat, n.lon, n.name
@@ -1161,7 +1174,7 @@ class Weather {
       lon      := IniRead(this.iniFile, userName, "Lon", "")
       CC       := IniRead(this.iniFile, userName, "CC", "us")
       fullName := IniRead(this.iniFile, userName, "FullName", "")
-      Model    := IniRead(this.iniFile, userName, "Model", "auto")
+      Model    := IniRead(this.iniFile, userName, "Model", "")
       if (IsNumber(lon) AND IsNumber(lat))
          return {userName:userName, fullName:fullName, lat: Round(lat,7), lon: Round(lon,7), CC: CC, Model: Model, cached:1}
       ; Query location data from openstreetmap
@@ -1213,7 +1226,7 @@ class Weather {
          txt := whr.ResponseText
       } catch
          Return ""
-      If !InStr(txt, '"success": true')
+      If !RegExMatch(txt, '"success":\s*true')
          Return ""
       place := ""
       For key in ["city", "region", "country"]
@@ -1260,7 +1273,7 @@ class Weather {
    }
 }
 /**
- * On unlock or resume from sleep, refresh immediatly
+ * On unlock or resume from sleep or display turning on , refresh immediatly
  */
 SetupEventMonitoring() {
    Static WM_POWERBROADCAST    := 0x0218
@@ -1277,7 +1290,7 @@ SetupEventMonitoring() {
    OnMessage(WM_POWERBROADCAST, cbPowerChangeEvent)
    OnMessage(WM_WTSSESSION_CHANGE, cbSessionChange)
    OnMessage(WM_DISPLAYCHANGE, cbDisplayChange)   ; WM_DISPLAYCHANGE
-   ; GUID_CONSOLE_DISPLAY_STATE
+   ; GUID_CONSOLE_DISPLAY_STATE on, off or dimmed
    DllCall("ole32\CLSIDFromString", "Str", "{6FE69556-704A-47A0-8F24-C28D936FDA47}", "Ptr", guid := Buffer(16))
    hDisplay := DllCall("RegisterPowerSettingNotification", "Ptr", A_ScriptHwnd, "Ptr", guid, "UInt", 0, "Ptr")   ; DEVICE_NOTIFY_WINDOW_HANDLE
    /*==============================================================================
@@ -1287,7 +1300,9 @@ SetupEventMonitoring() {
    ================================================================================*/
    OnExit UnRegisterPower
    Return
-   ; Session Change lock/unlock
+   /**
+    * Session Change lock/unlock
+    */
    cbSessionChange(wParam, lParam, msg, hwnd) {
       Static WTS_SESSION_LOCK := 0x7, WTS_SESSION_UNLOCK := 0x8
       If (wParam = WTS_SESSION_LOCK) {
@@ -1299,7 +1314,9 @@ SetupEventMonitoring() {
          SetTimer(Weather.cbUpdateData, -5000)
       }
    }
-   ; Resume from sleep
+   /**
+    * Resume from sleep or handle a display coming on
+    */
    cbPowerChangeEvent(wParam, lParam, Msg, hWnd) {
       Static PBT_APMRESUMESUSPEND := 0x7, PBT_APMRESUMEAUTOMATIC := 0x12
       Static PBT_POWERSETTINGCHANGE := 0x8013
@@ -1310,20 +1327,22 @@ SetupEventMonitoring() {
             ; D2DText.RefreshAll(Weather.Gui)
             SetTimer(Weather.cbUpdateData, -10000)
             OutputDebug("WeatherWidget: Resume from Suspension")
-         Case PBT_POWERSETTINGCHANGE:
-         ; POWERBROADCAST_SETTING: GUID (16) + DataLength (4) + Data
-            ; Data: 0 = off, 1 = on, 2 = dimmed
+         Case PBT_POWERSETTINGCHANGE: ; display was dimmed or undimmed
+            ; POWERBROADCAST_SETTING: GUID (16) + DataLength (4) + Data
             If NumGet(lParam, 0, "Int64") != 0x47A0704A6FE69556    ; only GUID_CONSOLE_DISPLAY_STATE
                Return
-            state := NumGet(lParam, 20, "UChar")
-            Weather._dispOn := state != 0                          ; track always, including the first 60 s
-            ; ignore initial trigger at launch for the refresh
-            If (A_TickCount > (Weather.Launched + 60000) AND state = 1) {
+            If NumGet(lParam, 16, "UInt") != 4                     ; verify data length
+               Return               
+            ; Data: 0 = off, 1 = on, 2 = dimmed
+            state := NumGet(lParam, 20, "UInt")
+            wasOn := Weather._dispOn
+            Weather._dispOn := state != 0                          ; track always
+            If (state = 0)
+               SetTimer(Weather.cbUpdateData, 0)
+            Else If (!wasOn) {                       ; off -> on/dimmed only
                Weather.RefreshMe()
                SetTimer(Weather.cbUpdateData, -5000)
-               OutputDebug("WeatherWidget: PBT_POWERSETTINGCHANGE")
-            } else if (state == 0)             ; POWERBROADCAST_SETTING: GUID (16) + DataLength (4) + Data
-               SetTimer(Weather.cbUpdateData, 0)
+            }
          Default:
       }
    }
@@ -1334,10 +1353,10 @@ SetupEventMonitoring() {
     * lParam is resolution (low word is width, high word is height)
     */
    cbDisplayChange(wParam, lParam, msg, hwnd) {
-      OutputDebug("Redrawing Window due to refresh:")
       SetTimer(RefreshGui, -4000)   ; let the display stack settle first
       Return
       Static RefreshGui() {
+         OutputDebug("Redrawing Window due to refresh:")
          Weather.RefreshMe()
       }
    }
