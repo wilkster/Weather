@@ -238,9 +238,9 @@ class Weather {
       this.Ctl.detail  := this.AddTextCtl(fs("wp xm y+8"),,                            fs("s11") " cc7cfeb Norm", "Segoe UI")  ; Feels like ...
 
       this.Gui.SetFont(fs("S12"), "Consolas")
-      this.Ctl.srss   := this.Gui.AddD2DText(fs("w200 xm y+8"), ,                   "Segoe UI", fs(12), "f3f4cd")   ; Sunrise/Sunset
+      this.Ctl.srss   := this.Gui.AddD2DText(fs("w200 xm y+8"), ,                     "Segoe UI", fs(12), "f3f4cd")   ; Sunrise/Sunset
       this.Gui.SetFont(fs("S22"), "Consolas")
-      this.Ctl.moon   := this.Gui.AddD2DText(fs("w50 x+8 yp-6 Right"), ,            "Segoe UI", fs(20), "f3f4cd")   ; Moon phase, larger
+      this.Ctl.moon   := this.Gui.AddD2DText(fs("w50 x+35 yp-6 Right"), ,             "Segoe UI", fs(20), "f3f4cd")   ; Moon phase, larger
       ; The grids take their row height from the GUI font in effect here (r<N> sizing), so match it to the grid font
       this.Gui.SetFont(fs("S10") " Norm", "Segoe UI")
       ; Column widths are measured from the text; only the gaps (DIPs, scaled with fs like everything else) are tuned
@@ -467,6 +467,12 @@ class Weather {
       this.Menu.Add(mn, ToggleTemp)  ; Creates a new menu item.
       if (this.ColorCodeDaily)
          this.Menu.Check(mn)
+         
+      If (A_IsCompiled) {
+         this.Menu.Add("Run at Startup", (*) => this.SetStartup(!this.StartupEnabled))
+         If (this.StartupEnabled)
+            this.Menu.Check("Run at Startup")
+      }
 
       this.Menu.Add()
       this.Menu.Add("Exit", (*) => ExitApp())
@@ -800,7 +806,7 @@ class Weather {
       : aqi <= 100 ? "cece1f"
       : aqi <= 150 ? "c9721b"
       : aqi <= 200 ? "f93434"
-      : aqi <= 300 ? "99004C"
+      : aqi <= 300 ? "da006d"
       : "7E0023"
    }
    /**
@@ -952,13 +958,17 @@ class Weather {
                , { t: "W" wsu, span: 2, al: "Center", c: hc }
                ])
             psum := IsNumber(preps[i]) ? Number(preps[i]) : 0 ; total water precepitation in / mm
-            ssum := IsNumber(snows[i]) ? Number(snows[i]) : 0 ; total rainfall precepitation in / cm
-            If (psum < 0.01)
-               pVal := Round(ssum, rnd), pUnit := this.mks ? "㎜" : "'", pIcon := ""
-            Else If ((this.mks ? ssum : ssum / 10) >= psum * 0.5) ; Assume snow is 10:1 expansion for water
-               pVal := Round(ssum, rnd), pUnit := this.mks ? "㎝" : "'", pIcon := "❄"
+            ssum := IsNumber(snows[i]) ? Number(snows[i]) : 0 ; total Snow in / cm
+            ; TODO we could incorporate the weather code groupings for rain/snow
+            ; NBM can report snowfall with 0.0 liquid precipitation, so snow wins in that case
+            snowWE := this.mks ? ssum : ssum / 10 ; assumes 10:1 snow-to-water, as mm / in of water
+            If (ssum > 0 && (psum < 0.01 || snowWE >= psum * 0.5))
+               pVal := Round(ssum, rnd), pUnit := this.mks ? "㎝" : '"', pIcon := "❄"
+            Else If (psum >= 0.01)
+               pVal := Round(psum, rnd), pUnit := this.mks ? "㎜" : '"', pIcon := "💧"
             Else
-               pVal := Round(psum, rnd), pUnit := this.mks ? "㎜" : "'", pIcon := "💧"
+               pVal := 0, pUnit := this.mks ? "㎜" : '"', pIcon := ""
+               
             gusting := g >= w + (this.mks ? 8 : 5) ? true : false
 
             rows.Push([
@@ -1271,6 +1281,39 @@ class Weather {
       this.userName := newName
       this.Ctl.loc.Text := newName
    }
+
+   Static StartupLink => A_Startup "\" RegExReplace(A_ScriptName, "\.[^.]+$") ".lnk"
+   /**
+    * True only if the startup shortcut exists and points at this EXE
+    * (a stale shortcut from a moved EXE reads as disabled)
+    */
+   Static StartupEnabled {
+      Get {
+         If !FileExist(this.StartupLink)
+            Return false
+         Try FileGetShortcut(this.StartupLink, &target)
+         Catch
+            Return false
+         Return target = A_ScriptFullPath
+      }
+   }
+
+   /**
+    * Add or remove the startup shortcut
+    * @param enable true = create/refresh, false = delete
+    * @returns {Integer} true on success
+    */
+   Static SetStartup(enable) {
+      link := this.StartupLink
+      Try {
+         If (enable)
+            FileCreateShortcut(A_ScriptFullPath, link, A_ScriptDir, , "Weather Widget")
+         Else If FileExist(link)
+            FileDelete(link)
+      } Catch
+         Return false
+      Return true
+   }   
 }
 /**
  * On unlock or resume from sleep or display turning on , refresh immediatly
