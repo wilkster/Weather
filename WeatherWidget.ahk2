@@ -38,7 +38,6 @@ class Weather {
    Static ColorCodeDaily  := 1
    Static Assets          := A_ScriptDir . "\Assets\"
    Static Model           := "auto"
-   Static _dispOn := true
   /*
       WMO Weather Codes Reference
       Code	      Description
@@ -644,7 +643,6 @@ class Weather {
     * notification arrives (normally right after registering) the display is assumed to be on.
     * @returns {Boolean}
     */
-   Static IsMonitorOn(*) => this._dispOn
    Static IsScreenLocked(*) {
       ; If it returns a handle, we must close it and report as unlocked.
       If hDesktop := DllCall("User32\OpenInputDesktop", "Int", 0, "Int", 0, "Int", 0x100, "Ptr") {
@@ -664,9 +662,9 @@ class Weather {
          SetTimer(this.cbUpdateData, -60000)         ; retry in a minute; a successful run restores the normal interval
          Return         
       }
-      If !this.IsOnMonitor(hwnd) || !this.IsMonitorOn(hwnd) {
-         OutputDebug("WeatherWidget: Monitor not active, trying again in a minute")
-         SetTimer(this.cbUpdateData, -60000)         ; retry in a minute; a successful run restores the normal interval
+      If !this.IsOnMonitor(hwnd) {
+         OutputDebug("WeatherWidget: Window not on an attached monitor, trying again in a minute")
+         SetTimer(this.cbUpdateData, -60000)
          Return
       }
       If ( Not this.hasInternet) {
@@ -967,7 +965,7 @@ class Weather {
             Else If (psum >= 0.01)
                pVal := Round(psum, rnd), pUnit := this.mks ? "㎜" : '"', pIcon := "💧"
             Else
-               pVal := 0, pUnit := this.mks ? "㎜" : '"', pIcon := ""
+               pVal := Round(0,rnd), pUnit := this.mks ? "㎜" : '"', pIcon := ""
                
             gusting := g >= w + (this.mks ? 8 : 5) ? true : false
 
@@ -1324,7 +1322,6 @@ SetupEventMonitoring() {
    Static WM_WTSSESSION_CHANGE := 0x2B1
    ; Registers to receive notification when the system is suspended or resumed
    Static hwndNotification := 0
-   Static hDisplay := 0
    hwndNotification := DllCall("RegisterSuspendResumeNotification", "Ptr", A_ScriptHwnd, "UInt", 0, "Ptr")
    ; Registers the specified window to receive session change notifications
    ; DllCall("Wtsapi32.dll\WTSRegisterSessionNotification", "ptr", A_ScriptHwnd, "uint", 1)
@@ -1333,9 +1330,6 @@ SetupEventMonitoring() {
    OnMessage(WM_POWERBROADCAST, cbPowerChangeEvent)
    OnMessage(WM_WTSSESSION_CHANGE, cbSessionChange)
    OnMessage(WM_DISPLAYCHANGE, cbDisplayChange)   ; WM_DISPLAYCHANGE
-   ; GUID_CONSOLE_DISPLAY_STATE on, off or dimmed
-   DllCall("ole32\CLSIDFromString", "Str", "{6FE69556-704A-47A0-8F24-C28D936FDA47}", "Ptr", guid := Buffer(16))
-   hDisplay := DllCall("RegisterPowerSettingNotification", "Ptr", A_ScriptHwnd, "Ptr", guid, "UInt", 0, "Ptr")   ; DEVICE_NOTIFY_WINDOW_HANDLE
    /*==============================================================================
    Suspend resume messages, 7 means the user also initiated it vs system background
    AHK2 WM_BROADCAST:18, lparam=0, msg=536 PBT_APMRESUMEAUTOMATIC
@@ -1349,11 +1343,12 @@ SetupEventMonitoring() {
    cbSessionChange(wParam, lParam, msg, hwnd) {
       Static WTS_SESSION_LOCK := 0x7, WTS_SESSION_UNLOCK := 0x8
       If (wParam = WTS_SESSION_LOCK) {
+         OutputDebug("WeatherWidget: Session Change : Locked")
          SetTimer(Weather.cbUpdateData, 0)
       } Else If (wParam = WTS_SESSION_UNLOCK) {
          Weather.RefreshMe()
          ; D2DText.RefreshAll(Weather.Gui)
-         OutputDebug("WeatherWidget: Session Change")
+         OutputDebug("WeatherWidget: Session Change : Unlocked")
          SetTimer(Weather.cbUpdateData, -5000)
       }
    }
@@ -1362,44 +1357,26 @@ SetupEventMonitoring() {
     */
    cbPowerChangeEvent(wParam, lParam, Msg, hWnd) {
       Static PBT_APMRESUMESUSPEND := 0x7, PBT_APMRESUMEAUTOMATIC := 0x12
-      Static PBT_POWERSETTINGCHANGE := 0x8013
-    
       Switch wParam {
          Case PBT_APMRESUMESUSPEND, PBT_APMRESUMEAUTOMATIC:
             Weather.RefreshMe()
             ; D2DText.RefreshAll(Weather.Gui)
             SetTimer(Weather.cbUpdateData, -10000)
             OutputDebug("WeatherWidget: Resume from Suspension")
-         Case PBT_POWERSETTINGCHANGE: ; display was dimmed or undimmed
-            ; POWERBROADCAST_SETTING: GUID (16) + DataLength (4) + Data
-            If NumGet(lParam, 0, "Int64") != 0x47A0704A6FE69556    ; only GUID_CONSOLE_DISPLAY_STATE
-               Return
-            If NumGet(lParam, 16, "UInt") != 4                     ; verify data length
-               Return               
-            ; Data: 0 = off, 1 = on, 2 = dimmed
-            state := NumGet(lParam, 20, "UInt")
-            wasOn := Weather._dispOn
-            Weather._dispOn := state != 0                          ; track always
-            If (state = 0)
-               SetTimer(Weather.cbUpdateData, 0)
-            Else If (!wasOn) {                       ; off -> on/dimmed only
-               Weather.RefreshMe()
-               SetTimer(Weather.cbUpdateData, -5000)
-            }
          Default:
       }
    }
    /**
-    * Hack if the GUI was on a disabled monitor, the composting will not
-    * update the window itself
+    * If the monitor went off or on, just refresh the GUI
     * wParam = new bit depth
     * lParam is resolution (low word is width, high word is height)
     */
    cbDisplayChange(wParam, lParam, msg, hwnd) {
       SetTimer(RefreshGui, -4000)   ; let the display stack settle first
+      SetTimer(Weather.cbUpdateData, -2000)
       Return
       Static RefreshGui() {
-         OutputDebug("Redrawing Window due to refresh:")
+         OutputDebug("WeatherWidget: Redrawing Window due to DPI Change:")
          Weather.RefreshMe()
       }
    }
@@ -1410,8 +1387,6 @@ SetupEventMonitoring() {
       DllCall("Wtsapi32.dll\WTSUnRegisterSessionNotification", "ptr", A_ScriptHwnd)
       If (hwndNotification)
          DllCall("UnregisterSuspendResumeNotification", "ptr", hwndNotification)
-      If (hDisplay)
-         DllCall("UnregisterPowerSettingNotification", "Ptr", hDisplay)
    }
 }
 
