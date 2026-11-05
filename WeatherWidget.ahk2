@@ -228,8 +228,8 @@ class Weather {
       this.Ctl.loc     := this.AddTextCtl(fs("w" wid),                    this.userName,    fs("s11 Bold") " cA6ADC8", "Segoe UI")  ; Los Angeles
 
       this.Ctl.temp    := this.AddTextCtl(fs("w78 y+2") " Right",        "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; 75
-      this.Ctl.AQI     := this.AddTextCtl(fs("w43 x+0 yp+12") " Right",  "---",        fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; 34 same row
-      this.Ctl.AQIlab  := this.AddTextCtl(fs("w30 x+2 yp+13"),           "aqi",        fs("s9")  " cA6ADC8 Norm", "Segoe UI")  ; aqi same row
+      this.Ctl.AQI     := this.AddTextCtl(fs("w43 x+8 yp+12") " Right",  "---",        fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; 34 same row
+      this.Ctl.AQIlab  := this.AddTextCtl(fs("w30 x+2 yp+14"),           "aqi",        fs("s9")  " cA6ADC8 Norm", "Segoe UI")  ; aqi same row
 
       this.Ctl.hilo    := this.AddTextCtl(fs("w" wid " xm y+20"),            "Loading...", fs("s11") " cCDD6F4 Norm", "Segoe UI")  ; H/L temp
       this.Ctl.cond    := this.AddTextCtl("wp xp-8 yp Right",,                         fs("s11") " cCDD6F4 Bold", "Segoe UI")  ; Partly Cloudy on right
@@ -247,23 +247,24 @@ class Weather {
       this.Ctl.hourly.SetColumns([ ; gap is after the entry
          {al: "Right", w: "auto", gap: fs(10)},   ; time
          {al: "Right", w: "auto", gap: fs(4)},    ; temp
-         {al: "Center",  w: "auto", gap: fs(12)}, ; condition icon
-         {al: "Right", w: "auto", gap: fs(10)},   ; aqi
-         {al: "Right", w: "auto", gap: fs(12)},   ; precip %
-         {al: "Right", w: "auto", gap: fs(2)},    ; wind speed
-         {al: "Center", w: "auto", gap: fs(2)},   ; "-"
-         {al: "Right", w: "auto", gap: fs(6)},    ; wind speed gusts
+         {al: "Center",  w: "auto", gap: fs(8)}, ; condition icon
+         {al: "Right", w: "auto", gap: fs(8)},   ; aqi
+         {al: "Right", w: "auto", gap: fs(8)},   ; humidity
+         {al: "Right", w: "auto", gap: fs(8)},   ; precip %
+         {al: "Right", w: "auto", gap: fs(1)},    ; wind speed
+         {al: "Center", w: "auto", gap: fs(1)},   ; "-"
+         {al: "Right", w: "auto", gap: fs(3)},    ; wind speed gusts
          {al: "Left",  w: "auto"}])               ; wind direction
       this.Ctl.daily  := this.Gui.AddD2DGrid(fs("wp y+8") " r" (this.forecastDays + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write grid for emojis
       this.Ctl.daily.SetColumns([
-         {al: "Left",  w: "auto", gap: fs(7)},    ; day
+         {al: "Left",  w: "auto", gap: fs(4)},    ; day
          {al: "Right", w: "auto", gap: fs(2)},    ; low
          {al: "Left",  w: "auto", gap: fs(2)},    ; "rangeBar
          {al: "Right", w: "auto", gap: fs(0)},    ; high
-         {al: "Left",  w: "auto", gap: fs(7)},    ; condition icon
-         {al: "Right", w: "auto", gap: fs(3)},    ; precip amount
+         {al: "Left",  w: "auto", gap: fs(6)},    ; condition icon
+         {al: "Right", w: "auto", gap: fs(1)},    ; precip amount
          {al: "Left",  w: "auto", gap: fs(2)},    ; precip unit
-         {al: "Left",  w: "auto", gap: fs(7)},    ; precip icon
+         {al: "Left",  w: "auto", gap: fs(4)},    ; precip icon
          {al: "Right", w: "auto", gap: fs(2)},    ; wind/gust speed
          {al: "Left",  w: "auto"}])               ; Gust Icon
       this.Ctl.updated := this.AddTextCtl(fs("wp y+8"),,                                fs("s9")  " c7F849C", "Segoe UI")  ; overlay1
@@ -678,20 +679,23 @@ class Weather {
       Try {
          ok := this.UpdateAirQuality()
          ok := this.UpdateWeather() && ok
-         if (! OK)
-            OutputDebug("WeatherWidget: Query Failed, trying again in a minute")
       } Finally {
          SendMessage(0x000B, 1, 0, , hwnd)   ; WM_SETREDRAW on
       }
       ; Everything updated, now refresh GUI all at once
       ; Change backcolor outside of WM_SETREDRAW off
-      this.RefreshMe()
-      If (this.Gui.BackColor != this.BackColor) {
-         this.Gui.BackColor := this.BackColor ; triggers a repaint
+      If (ok) {
+         this.RefreshMe()
+         If (this.Gui.BackColor != this.BackColor) {
+            this.Gui.BackColor := this.BackColor ; triggers a repaint
+         }
+         OutputDebug("WeatherWidget: Updated Weather and Air Quality for " this.userName " using model " this.Model)
+         this.PruneMemory()
+         SetTimer(this.cbUpdateData, this.Interval * 60000)
+      } Else {
+         OutputDebug("WeatherWidget: Query Failed, trying again in a minute")
+         SetTimer(this.cbUpdateData, -60000)
       }
-      SetTimer(this.cbUpdateData, ok ? this.Interval * 60000 : -60000)
-      this.PruneMemory()
-      OutputDebug("WeatherWidget: Updated Weather and Air Quality for " this.userName " using model " this.Model)
    }
    /**
     * Resolve lat/lon from the location name if needed.
@@ -768,7 +772,7 @@ class Weather {
       url := "https://api.open-meteo.com/v1/forecast?latitude=" this.Lat "&longitude=" this.Lon 
          . (!(this.Model = "auto" || this.Model = "") ? "&models=" this.Model : "")
          . "&current=weather_code,temperature_2m,wind_gusts_10m,wind_speed_10m,wind_direction_10m,apparent_temperature,relative_humidity_2m,is_day"
-         . "&hourly=weather_code,temperature_2m,precipitation_probability,wind_speed_10m,wind_gusts_10m,wind_direction_10m,is_day"
+         . "&hourly=weather_code,temperature_2m,precipitation_probability,wind_speed_10m,wind_gusts_10m,wind_direction_10m,relative_humidity_2m,is_day"
          . "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,precipitation_probability_max,"
          . "wind_speed_10m_max,wind_gusts_10m_max,sunrise,sunset" ;; wind_direction_10m_dominant
          . "&precipitation_unit=" pu "&temperature_unit=" tu "&wind_speed_unit=" ws "&forecast_days=" max(this.forecastDays,1)
@@ -860,6 +864,7 @@ class Weather {
       times := this.List(hrs, "time")
       temps := this.List(hrs, "temperature_2m")
       pops  := this.List(hrs, "precipitation_probability")
+      hums  := this.List(hrs, "relative_humidity_2m")
       winds := this.List(hrs, "wind_speed_10m")
       windg := this.List(hrs, "wind_gusts_10m")
       dirs  := this.List(hrs, "wind_direction_10m")
@@ -883,6 +888,7 @@ class Weather {
          p  := pops[i]
          w  := winds[i]
          g  := windg[i]
+         h  := hums[i]
          a  := this.hourlyAQI.Get(times[i], "")   ; from AQI query, matched by hour
          d  := Compass(dirs[i])
          wcn := Integer(codes[i])
@@ -895,6 +901,7 @@ class Weather {
                {t: "Time", span: 1, al: "Center", c:hc}, 
                {t: "Temp", span: 2, al: "Center", c:hc}, 
                {t: "AQI",  al: "Center", c:hc}, 
+               {t: "Hum",  al: "Center", c:hc}, 
                {t: "Prec", al: "Center", c:hc}, 
                {t: "Wind" . wsu, span: 4, al: "Center", c:hc}
             ])
@@ -903,6 +910,7 @@ class Weather {
             , { t: (IsNumber(t) ? this.fixfix(Round(t) "°") : "--"), c: cc && IsNumber(t) ? TempColor(Round(t), loHr, hiHr) : tc }
             , wc
             , IsNumber(a) ? {t: a, c: this.AqiColor(a)} : "--"
+            , IsNumber(h) ? h "%" : "--"
             , IsNumber(p) ? p "%" : "--"
             , IsNumber(w) ? Round(w) : "--"
             , "-"
@@ -965,14 +973,14 @@ class Weather {
             Else If (psum >= 0.01)
                pVal := Round(psum, rnd), pUnit := this.mks ? "㎜" : '"', pIcon := "💧"
             Else
-               pVal := Round(0,rnd), pUnit := this.mks ? "㎜" : '"', pIcon := ""
+               pVal := Round(0, rnd), pUnit := this.mks ? "㎜" : '"', pIcon := ""
                
             gusting := g >= w + (this.mks ? 8 : 5) ? true : false
 
             rows.Push([
                i == 1 ? "Today" : FormatTime(Trim(StrReplace(days[i], '-'), '"'), "dd ddd")
                , { t: this.fixfix(lows[i] "°"), c: cc ? TempColor(lows[i], loMin, loMax) : tc }
-               , { t: RangeBar(lows[i], highs[i], loMin, hiMax, 6, i==1 ? tf : unset), c: "0x6ca8c7"} ;tcrb
+               , { t: RangeBar(lows[i], highs[i], loMin, hiMax, 7, i==1 ? tf : unset), c: "0x6ca8c7"} ;tcrb
                , { t: this.fixfix(highs[i] "°"), c: cc ? TempColor(highs[i], hiMin, hiMax) : tc }
                , this.emoji.get(Integer(codes[i]), "🌈")
                , pVal
@@ -1151,8 +1159,10 @@ class Weather {
          Case 0x202:   ; user left-clicked tray icon
             If (GetKeyState("Ctrl", "P"))
                this.Gui.hide()
-            else
+            Else {
                this.Gui.show()
+               this.SnapToWorkArea(this.Gui, "", "", "")
+            }
          Case 0x203:   ; user double left-clicked tray icon
          Case 0x204:   ; user right-clicked tray icon
          Case 0x208:   ; user middle-clicked tray icon
@@ -1317,25 +1327,21 @@ class Weather {
  * On unlock or resume from sleep or display turning on , refresh immediatly
  */
 SetupEventMonitoring() {
-   Static WM_POWERBROADCAST    := 0x0218
-   Static WM_DISPLAYCHANGE     := 0x7E
-   Static WM_WTSSESSION_CHANGE := 0x2B1
+   Static WM_POWERBROADCAST     := 0x0218
+   Static WM_DISPLAYCHANGE      := 0x7E
+   Static WM_WTSSESSION_CHANGE  := 0x2B1
+   Static hwndNotification      := 0
+   Static sessionNotificationOK := 0
    ; Registers to receive notification when the system is suspended or resumed
-   Static hwndNotification := 0
    hwndNotification := DllCall("RegisterSuspendResumeNotification", "Ptr", A_ScriptHwnd, "UInt", 0, "Ptr")
    ; Registers the specified window to receive session change notifications
-   ; DllCall("Wtsapi32.dll\WTSRegisterSessionNotification", "ptr", A_ScriptHwnd, "uint", 1)
-   DllCall("Wtsapi32\WTSRegisterSessionNotification", "Ptr", A_ScriptHwnd, "UInt", 0) ; NOTIFY_FOR_THIS_SESSION = 0
+   sessionNotificationOK := DllCall("Wtsapi32\WTSRegisterSessionNotification", "Ptr", A_ScriptHwnd, "UInt", 0) ; NOTIFY_FOR_THIS_SESSION = 0
    ; Message Hanlders are closures
    OnMessage(WM_POWERBROADCAST, cbPowerChangeEvent)
    OnMessage(WM_WTSSESSION_CHANGE, cbSessionChange)
    OnMessage(WM_DISPLAYCHANGE, cbDisplayChange)   ; WM_DISPLAYCHANGE
-   /*==============================================================================
-   Suspend resume messages, 7 means the user also initiated it vs system background
-   AHK2 WM_BROADCAST:18, lparam=0, msg=536 PBT_APMRESUMEAUTOMATIC
-   AHK2 WM_BROADCAST:7, lparam=0, msg=536 PBT_APMRESUMESUSPEND
-   ================================================================================*/
-   OnExit UnRegisterPower
+
+   OnExit UnRegisterHandlers
    Return
    /**
     * Session Change lock/unlock
@@ -1347,22 +1353,20 @@ SetupEventMonitoring() {
          SetTimer(Weather.cbUpdateData, 0)
       } Else If (wParam = WTS_SESSION_UNLOCK) {
          Weather.RefreshMe()
-         ; D2DText.RefreshAll(Weather.Gui)
          OutputDebug("WeatherWidget: Session Change : Unlocked")
          SetTimer(Weather.cbUpdateData, -5000)
       }
    }
    /**
-    * Resume from sleep or handle a display coming on
+    * Resume from sleep
     */
    cbPowerChangeEvent(wParam, lParam, Msg, hWnd) {
       Static PBT_APMRESUMESUSPEND := 0x7, PBT_APMRESUMEAUTOMATIC := 0x12
       Switch wParam {
          Case PBT_APMRESUMESUSPEND, PBT_APMRESUMEAUTOMATIC:
             Weather.RefreshMe()
-            ; D2DText.RefreshAll(Weather.Gui)
-            SetTimer(Weather.cbUpdateData, -10000)
-            OutputDebug("WeatherWidget: Resume from Suspension")
+            SetTimer(Weather.cbUpdateData, -8000)
+            OutputDebug("WeatherWidget: Resume from Standby")
          Default:
       }
    }
@@ -1376,17 +1380,21 @@ SetupEventMonitoring() {
       SetTimer(Weather.cbUpdateData, -2000)
       Return
       Static RefreshGui() {
-         OutputDebug("WeatherWidget: Redrawing Window due to DPI Change:")
+         OutputDebug("WeatherWidget: Refresh due to Display Change")
          Weather.RefreshMe()
       }
    }
    ;----------------------------------------------------------------------
    ; On exit, unregister handlers
    ;----------------------------------------------------------------------
-   UnRegisterPower(ExitReason, ExitCode) {
-      DllCall("Wtsapi32.dll\WTSUnRegisterSessionNotification", "ptr", A_ScriptHwnd)
+   UnRegisterHandlers(ExitReason, ExitCode) {
+      if (sessionNotificationOK)
+         DllCall("Wtsapi32.dll\WTSUnRegisterSessionNotification", "ptr", A_ScriptHwnd)
       If (hwndNotification)
          DllCall("UnregisterSuspendResumeNotification", "ptr", hwndNotification)
+      OnMessage(WM_POWERBROADCAST, cbPowerChangeEvent,0)
+      OnMessage(WM_WTSSESSION_CHANGE, cbSessionChange,0)
+      OnMessage(WM_DISPLAYCHANGE, cbDisplayChange,0)   ; WM_DISPLAYCHANGE
    }
 }
 
