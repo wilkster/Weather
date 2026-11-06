@@ -38,6 +38,7 @@ class Weather {
    Static ColorCodeDaily  := 1
    Static Assets          := A_ScriptDir . "\Assets\"
    Static Model           := "auto"
+   Static RangeWidth      := 7 ; characters, could be a setting
   /*
       WMO Weather Codes Reference
       Code	      Description
@@ -236,14 +237,11 @@ class Weather {
 
       this.Ctl.detail  := this.AddTextCtl(fs("w" wid " xm y+8"),,                      fs("s11") " cc7cfeb Norm", "Segoe UI")  ; Feels like ...
 
-      this.Gui.SetFont(fs("S12"), "Consolas")
-      this.Ctl.srss   := this.Gui.AddD2DText(fs("w200 xm y+8"), ,                     "Segoe UI", fs(12), "f3f4cd")   ; Sunrise/Sunset
-      this.Gui.SetFont(fs("S22"), "Consolas")
-      this.Ctl.moon   := this.Gui.AddD2DText(fs("w50 x+35 yp-6 Right"), ,             "Segoe UI", fs(20), "f3f4cd")   ; Moon phase, larger
+      this.Ctl.srss   := this.AddD2DTextCtl(fs("w200 xm y+8"), ,                     "Segoe UI", fs(12), "f3f4cd")   ; Sunrise/Sunset
+      this.Ctl.moon   := this.AddD2DTextCtl(fs("w50 x+35 yp-6 Right"), ,             "Segoe UI", fs(20), "f3f4cd")   ; Moon phase, larger
       ; The grids take their row height from the GUI font in effect here (r<N> sizing), so match it to the grid font
-      this.Gui.SetFont(fs("S10") " Norm", "Segoe UI")
       ; Column widths are measured from the text; only the gaps (DIPs, scaled with fs like everything else) are tuned
-      this.Ctl.hourly := this.Gui.AddD2DGrid(fs("w" wid " xm y+8") " r" (this.maxRows + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write grid for emojis
+      this.Ctl.hourly := this.AddD2DGridCtl(fs("w" wid " xm y+8") " r" (this.maxRows + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write grid for emojis
       this.Ctl.hourly.SetColumns([ ; gap is after the entry
          {al: "Right", w: "auto", gap: fs(10)},   ; time
          {al: "Right", w: "auto", gap: fs(4)},    ; temp
@@ -255,7 +253,8 @@ class Weather {
          {al: "Center", w: "auto", gap: fs(1)},   ; "-"
          {al: "Right", w: "auto", gap: fs(3)},    ; wind speed gusts
          {al: "Left",  w: "auto"}])               ; wind direction
-      this.Ctl.daily  := this.Gui.AddD2DGrid(fs("wp y+8") " r" (this.forecastDays + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write grid for emojis
+
+      this.Ctl.daily  := this.AddD2DGridCtl(fs("wp y+8") " r" (this.forecastDays + 1),,"Segoe UI", fs(10), "CDD6F4")   ; Direct Write grid for emojis
       this.Ctl.daily.SetColumns([
          {al: "Left",  w: "auto", gap: fs(4)},    ; day
          {al: "Right", w: "auto", gap: fs(2)},    ; low
@@ -392,6 +391,16 @@ class Weather {
       if (IsSet(fontOpt) || IsSet(fontName))
          this.gui.SetFont(fontOpt ?? "", fontName ?? "")
       return this.gui.AddText(options " BackgroundTrans", default ?? "")
+   }
+   ; Wrapper for AddD2DText to also set the FontSize for spacing
+   Static AddD2DTextCtl(params*) {
+      this.Gui.SetFont("S" params[4], params[3])
+      return this.gui.AddD2DText(params*)
+   }
+   ; Wrapper for AddD2DGrid to also set the FontSize for spacing
+   Static AddD2DGridCtl(params*) {
+      this.Gui.SetFont("S" params[4], params[3])
+      return this.gui.AddD2DGrid(params*)
    }
    /**
     * Build/Rebuild/Show the RMB menu
@@ -980,7 +989,7 @@ class Weather {
             rows.Push([
                i == 1 ? "Today" : FormatTime(Trim(StrReplace(days[i], '-'), '"'), "dd ddd")
                , { t: this.fixfix(lows[i] "°"), c: cc ? TempColor(lows[i], loMin, loMax) : tc }
-               , { t: RangeBar(lows[i], highs[i], loMin, hiMax, 7, i==1 ? tf : unset), c: "0x6ca8c7"} ;tcrb
+               , { t: RangeBar(lows[i], highs[i], loMin, hiMax, this.RangeWidth, i==1 ? tf : unset), c: "0x6ca8c7"} ;tcrb
                , { t: this.fixfix(highs[i] "°"), c: cc ? TempColor(highs[i], hiMin, hiMax) : tc }
                , this.emoji.get(Integer(codes[i]), "🌈")
                , pVal
