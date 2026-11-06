@@ -227,14 +227,14 @@ class Weather {
       wid := 310 ; hand tune this
       this.Ctl.loc     := this.AddTextCtl(fs("w" wid),                    this.userName,    fs("s11 Bold") " cA6ADC8", "Segoe UI")  ; Los Angeles
 
-      this.Ctl.temp    := this.AddTextCtl(fs("w78 y+2") " Right",        "---°",       fs("s28") " cCDD6F4 Bold", "Segoe UI")  ; 75
+      this.Ctl.temp    := this.AddTextCtl(fs("w78 y+2") " Right",        "---°",       fs("s30") " cCDD6F4 Bold", "Segoe UI")  ; 75
       this.Ctl.AQI     := this.AddTextCtl(fs("w43 x+8 yp+12") " Right",  "---",        fs("s20") " cCDD6F4 Bold", "Segoe UI")  ; 34 same row
       this.Ctl.AQIlab  := this.AddTextCtl(fs("w30 x+2 yp+14"),           "aqi",        fs("s9")  " cA6ADC8 Norm", "Segoe UI")  ; aqi same row
 
-      this.Ctl.hilo    := this.AddTextCtl(fs("w" wid " xm y+20"),            "Loading...", fs("s11") " cCDD6F4 Norm", "Segoe UI")  ; H/L temp
-      this.Ctl.cond    := this.AddTextCtl("wp xp-8 yp Right",,                         fs("s11") " cCDD6F4 Bold", "Segoe UI")  ; Partly Cloudy on right
+      this.Ctl.hilo    := this.AddTextCtl(fs("w" wid " xm y+20"),      "Loading...",   fs("s11") " cCDD6F4 Norm", "Segoe UI")  ; H/L temp
+      this.Ctl.cond    := this.AddTextCtl(fs("w" wid/3 " x" 2*wid/3 " yp Center"),,    fs("s11") " cCDD6F4 Bold", "Segoe UI")  ; Partly Cloudy on right
 
-      this.Ctl.detail  := this.AddTextCtl(fs("wp xm y+8"),,                            fs("s11") " cc7cfeb Norm", "Segoe UI")  ; Feels like ...
+      this.Ctl.detail  := this.AddTextCtl(fs("w" wid " xm y+8"),,                      fs("s11") " cc7cfeb Norm", "Segoe UI")  ; Feels like ...
 
       this.Gui.SetFont(fs("S12"), "Consolas")
       this.Ctl.srss   := this.Gui.AddD2DText(fs("w200 xm y+8"), ,                     "Segoe UI", fs(12), "f3f4cd")   ; Sunrise/Sunset
@@ -263,13 +263,13 @@ class Weather {
          {al: "Right", w: "auto", gap: fs(0)},    ; high
          {al: "Left",  w: "auto", gap: fs(6)},    ; condition icon
          {al: "Right", w: "auto", gap: fs(1)},    ; precip amount
-         {al: "Left",  w: "auto", gap: fs(2)},    ; precip unit
+         {al: "Left",  w: "auto", gap: fs(2)},    ; precip unit , necessary?
          {al: "Left",  w: "auto", gap: fs(4)},    ; precip icon
          {al: "Right", w: "auto", gap: fs(2)},    ; wind/gust speed
          {al: "Left",  w: "auto"}])               ; Gust Icon
       this.Ctl.updated := this.AddTextCtl(fs("wp y+8"),,                                fs("s9")  " c7F849C", "Segoe UI")  ; overlay1
       this.ActiveIcon := ""
-      this.Ctl.Icon := g.AddPicture(fs("H96 W96 X" wid - 96 " Y0"))      ; X is width - 96
+      this.Ctl.Icon := g.AddPicture(fs("H96 W96 X" (wid - 96 + 12) " Y0"))      ; X is width - 96
       if (this.dpi() > 96)
          this.DropShadow(g.hWnd) ; also border
       else
@@ -1504,6 +1504,7 @@ class LocationManager {
 
    static Load() {
       this.Items := []
+      dupCheck := Map()
       inSec := false
       for line in StrSplit(this.ReadText(&enc), "`n", "`r") {
          line := Trim(line)
@@ -1511,8 +1512,12 @@ class LocationManager {
             inSec := (line = "[" this.Section "]")
             continue
          }
-         if inSec && line != ""
-            this.Items.Push(line)
+         If inSec && line != "" {
+            If !(dupCheck.has(line)) {
+               this.Items.Push(line)
+               dupCheck[line] := 1
+            }
+         }
       }
    }
 
