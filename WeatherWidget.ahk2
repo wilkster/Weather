@@ -39,6 +39,9 @@ class Weather {
    Static Assets          := A_ScriptDir . "\Assets\"
    Static Model           := "auto"
    Static RangeWidth      := 7 ; characters, could be a setting
+   Static cbRefreshMe     := this.RefreshMe.Bind(this)
+   Static cbUpdateData    := this.RefreshData.bind(this)
+
   /*
       WMO Weather Codes Reference
       Code	      Description
@@ -195,7 +198,6 @@ class Weather {
 
       g := this.BuildGUI(X?, Y?)
       OnMessage(0x404, this.TrayMessage.Bind(this))
-      this.cbUpdateData := this.RefreshData.bind(this)
       If (this.hasInternet) {
          this.RefreshData()
       } Else {
@@ -631,6 +633,7 @@ class Weather {
     */
    static Drag(GuiOrCtrlObj, wParam, lParam, msg) {
       DllCall("ReleaseCapture")
+      this.RefreshMe()
       PostMessage(0xA1, 2, , , GuiOrCtrlObj.hWnd)   ; WM_NCLBUTTONDOWN, HTCAPTION
    }
    /**
@@ -1352,11 +1355,16 @@ SetupEventMonitoring() {
    Static WM_WTSSESSION_CHANGE  := 0x2B1
    Static hwndNotification      := 0
    Static sessionNotificationOK := 0
+   Static hDisplay              := 0
    ; Registers to receive notification when the system is suspended or resumed
    hwndNotification := DllCall("RegisterSuspendResumeNotification", "Ptr", A_ScriptHwnd, "UInt", 0, "Ptr")
    ; Registers the specified window to receive session change notifications
    sessionNotificationOK := DllCall("Wtsapi32\WTSRegisterSessionNotification", "Ptr", A_ScriptHwnd, "UInt", 0) ; NOTIFY_FOR_THIS_SESSION = 0
-   ; Message Hanlders are closures
+   ; GUID_CONSOLE_DISPLAY_STATE on, off or dimmed
+   DllCall("ole32\CLSIDFromString", "Str", "{6FE69556-704A-47A0-8F24-C28D936FDA47}", "Ptr", guid := Buffer(16))
+   hDisplay := DllCall("RegisterPowerSettingNotification", "Ptr", A_ScriptHwnd, "Ptr", guid, "UInt", 0, "Ptr")   ; DEVICE_NOTIFY_WINDOW_HANDLE
+
+   ; Message Handelers are closures
    OnMessage(WM_POWERBROADCAST, cbPowerChangeEvent)
    OnMessage(WM_WTSSESSION_CHANGE, cbSessionChange)
    OnMessage(WM_DISPLAYCHANGE, cbDisplayChange)   ; WM_DISPLAYCHANGE
@@ -1374,6 +1382,7 @@ SetupEventMonitoring() {
       } Else If (wParam = WTS_SESSION_UNLOCK) {
          OutputDebug("WeatherWidget: Session Change : Unlocked")
          SetTimer(Weather.cbUpdateData, -2000)
+         SetTimer(Weather.cbRefreshMe, -8000)   ; let the display stack settle first
       }
    }
    /**
@@ -1381,10 +1390,35 @@ SetupEventMonitoring() {
     */
    cbPowerChangeEvent(wParam, lParam, Msg, hWnd) {
       Static PBT_APMRESUMESUSPEND := 0x7, PBT_APMRESUMEAUTOMATIC := 0x12
+      Static PBT_POWERSETTINGCHANGE := 0x8013
       Switch wParam {
          Case PBT_APMRESUMESUSPEND, PBT_APMRESUMEAUTOMATIC:
             SetTimer(Weather.cbUpdateData, -5000)
+            SetTimer(Weather.cbRefreshMe, -8000)   ; let the display stack settle first
             OutputDebug("WeatherWidget: Resume from Standby")
+         Case PBT_POWERSETTINGCHANGE: ; Monitor power times out
+            ; GUID_SESSION_DISPLAY_STATUS
+            ; Is this notification for GUID_CONSOLE_DISPLAY_STATE?"
+            ; GUID_CONSOLE_DISPLAY_STATE {6FE69556-704A-47A0-8F24-C28D936FDA47}
+            If NumGet(lParam, 0, "Int64") != 0x47A0704A6FE69556
+            || NumGet(lParam, 8, "Int64") != 0x47DA6F938DC2248F
+               Return            
+            ; Check for POWERBROADCAST_SETTING
+            ; GUID (16) + DataLength (4) + Data (4)
+            If NumGet(lParam, 16, "UInt") != 4
+               Return
+            ; Read GUID_SESSION_DISPLAY_STATUS
+            state := NumGet(lParam, 20, "UInt") 
+            Switch state {
+               Case 1 : ; Monitor power on
+                  SetTimer(Weather.cbRefreshMe, -2000)   ; let the display stack settle first
+                  SetTimer(Weather.cbUpdateData, -4000)
+                  OutputDebug("WeatherWidget: Monitor Power Coming back on")
+               Case 0 : ; Monitor power off, prevent updates
+                  SetTimer(Weather.cbUpdateData, 0)
+                  OutputDebug("WeatherWidget: Monitor Power going off")
+               Default :
+            }
          Default:
       }
    }
@@ -1394,13 +1428,9 @@ SetupEventMonitoring() {
     * lParam is resolution (low word is width, high word is height)
     */
    cbDisplayChange(wParam, lParam, msg, hwnd) {
-      ; SetTimer(RefreshGui, -4000)   ; let the display stack settle first
+      SetTimer(Weather.cbRefreshMe, -8000)   ; let the display stack settle first
       SetTimer(Weather.cbUpdateData, -2000)
       Return
-      ; Static RefreshGui() {
-      ;    OutputDebug("WeatherWidget: Refresh due to Display Change")
-      ;    Weather.RefreshMe()
-      ; }
    }
    ;----------------------------------------------------------------------
    ; On exit, unregister handlers
@@ -1410,6 +1440,8 @@ SetupEventMonitoring() {
          DllCall("Wtsapi32.dll\WTSUnRegisterSessionNotification", "ptr", A_ScriptHwnd)
       If (hwndNotification)
          DllCall("UnregisterSuspendResumeNotification", "ptr", hwndNotification)
+      If (hDisplay)
+         DllCall("UnregisterPowerSettingNotification", "Ptr", hDisplay)         
       OnMessage(WM_POWERBROADCAST, cbPowerChangeEvent,0)
       OnMessage(WM_WTSSESSION_CHANGE, cbSessionChange,0)
       OnMessage(WM_DISPLAYCHANGE, cbDisplayChange,0)   ; WM_DISPLAYCHANGE
@@ -1671,7 +1703,6 @@ class LocationManager {
    }
 }
 Range(Start, Stop, Step := 1) => (&n) => (n := Start, Start += Step, Step > 0 ? n <= Stop : n >= Stop)
-
 
 ; Start things up here
 MenuDarkMode.Enable(1)   ; use 1 to follow the system theme instead of forcing dark
