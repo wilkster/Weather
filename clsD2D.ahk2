@@ -1,0 +1,361 @@
+; D2D: static COM method wrappers for Direct2D / DirectWrite, shared by DirectWriteClass.ahk2 (D2DText, D2DGrid)
+; and UnicodeBrowser.ahk2. Include it with:
+;    #Include "%A_LineFile%\..\D2D.ahk2"
+; A second #Include of the same file is skipped, so DirectWriteClass.ahk2 can include it too.
+#Requires AutoHotkey v2.1-
+struct DWRITE_TEXT_METRICS {
+   left                            : Float32
+   top                             : Float32
+   width                           : Float32
+   widthIncludingTrailingWhitespace: Float32
+   height                          : Float32
+   layoutWidth                     : Float32
+   layoutHeight                    : Float32
+   maxBidiReorderingDepth          : UInt32
+   lineCount                       : UInt32
+}
+struct D2D1_COLOR_F {
+   r: Float32
+   g: Float32
+   b: Float32
+   a: Float32
+}
+struct D2D1_RECT_F {
+   left  : Float32
+   top   : Float32
+   right : Float32
+   bottom: Float32
+}
+struct D2D1_SIZE_U {
+   width : UInt32
+   height: UInt32
+}
+struct D2D1_PIXEL_FORMAT {
+   format   : UInt32
+   alphaMode: UInt32
+}
+struct D2D1_RENDER_TARGET_PROPERTIES {
+   renderType : UInt32
+   pixelFormat: D2D1_PIXEL_FORMAT
+   dpiX       : Float32
+   dpiY       : Float32
+   usage      : UInt32
+   minLevel   : UInt32
+}
+struct D2D1_HWND_RENDER_TARGET_PROPERTIES {
+   hwnd          : IntPtr
+   pixelSize     : D2D1_SIZE_U
+   presentOptions: UInt32
+}
+/**
+ * Static wrappers for the Direct2D / DirectWrite COM methods used by D2DText, D2DGrid and UniBrowser, named after
+ * the Windows API methods they invoke.
+ * Each wrapper takes the raw COM interface pointer as its first parameter and hides the vtable index, the ComCall
+ * type strings and the out-parameters. Pointers are plain integers; releasing them stays with the caller (ObjRelease).
+ * Error handling matches the original ComCalls: methods that return an HRESULT throw an OSError on failure, while
+ * void methods, EndDraw, CheckWindowState and SetIncrementalTabStop use the "Int" return type so nothing is thrown.
+ * @example
+ * brush := D2D.CreateSolidColorBrush(rt, D2DText._Color(0xFF8080))
+ * D2D.BeginDraw(rt)
+ * D2D.Clear(rt, D2DText._Color(0x1E1E2E))
+ * D2D.DrawText(rt, "Hello", fmt, rc, brush, 4)
+ * hr := D2D.EndDraw(rt)
+ */
+class D2D {
+   ; ------------------------------------------------------------------ ID2D1Factory
+
+   /**
+    * ID2D1Factory::CreateHwndRenderTarget (vtable 14). Creates a render target that draws into a window.
+    * @param {Integer} factory ID2D1Factory pointer.
+    * @param {D2D1_RENDER_TARGET_PROPERTIES|Buffer} rtProps Render type, pixel format, DPI and usage.
+    * @param {D2D1_HWND_RENDER_TARGET_PROPERTIES|Buffer} hwndProps Target window, pixel size and present options.
+    * @returns {Integer} ID2D1HwndRenderTarget pointer. The caller owns it and must ObjRelease it.
+    * @throws {OSError} If the render target cannot be created.
+    */
+   static CreateHwndRenderTarget(factory, rtProps, hwndProps) {
+      rt := 0
+      ComCall(14, factory, "Ptr", rtProps, "Ptr", hwndProps, "Ptr*", &rt)
+      return rt
+   }
+
+   ; ------------------------------------------------------------------ ID2D1RenderTarget
+
+   /**
+    * ID2D1RenderTarget::CreateSolidColorBrush (vtable 8). Creates a brush that paints with one color.
+    * @param {Integer} rt ID2D1RenderTarget pointer.
+    * @param {D2D1_COLOR_F|Buffer} color Brush color (see D2DText._Color).
+    * @param {Integer} [brushProps=0] Optional D2D1_BRUSH_PROPERTIES pointer (opacity, transform). 0 = defaults.
+    * @returns {Integer} ID2D1SolidColorBrush pointer. The caller owns it and must ObjRelease it.
+    * @throws {OSError} If the brush cannot be created.
+    */
+   static CreateSolidColorBrush(rt, color, brushProps := 0) {
+      br := 0
+      ComCall(8, rt, "Ptr", color, "Ptr", brushProps, "Ptr*", &br)
+      return br
+   }
+
+   /**
+    * ID2D1RenderTarget::DrawRectangle (vtable 16). Draws the outline of a rectangle. Void; call between BeginDraw and EndDraw.
+    * @param {Integer} rt ID2D1RenderTarget pointer.
+    * @param {D2D1_RECT_F|Buffer} rect Rectangle (left, top, right, bottom floats) in DIPs.
+    * @param {Integer} brush ID2D1Brush pointer used to paint the outline.
+    * @param {Number} [strokeWidth=1.0] Outline width in DIPs. The stroke is centered on the rectangle edge.
+    * @param {Integer} [strokeStyle=0] ID2D1StrokeStyle pointer. 0 = solid.
+    */
+   static DrawRectangle(rt, rect, brush, strokeWidth := 1.0, strokeStyle := 0) {
+      ComCall(16, rt, "Ptr", rect, "Ptr", brush, "Float", strokeWidth, "Ptr", strokeStyle, "Int")
+   }
+
+   /**
+    * ID2D1RenderTarget::FillRectangle (vtable 17). Fills a rectangle. Void; call between BeginDraw and EndDraw.
+    * @param {Integer} rt ID2D1RenderTarget pointer.
+    * @param {D2D1_RECT_F|Buffer} rect Rectangle (left, top, right, bottom floats) in DIPs.
+    * @param {Integer} brush ID2D1Brush pointer used to fill the rectangle.
+    */
+   static FillRectangle(rt, rect, brush) {
+      ComCall(17, rt, "Ptr", rect, "Ptr", brush, "Int")
+   }
+
+   /**
+    * ID2D1RenderTarget::DrawText (vtable 27). Draws a string inside a layout rectangle. Void; call between BeginDraw and EndDraw.
+    * @param {Integer} rt ID2D1RenderTarget pointer.
+    * @param {String} text The text to draw. Its length is passed automatically.
+    * @param {Integer} textFormat IDWriteTextFormat pointer.
+    * @param {D2D1_RECT_F|Buffer} layoutRect Rectangle to draw into, in DIPs.
+    * @param {Integer} brush ID2D1Brush pointer used to fill the glyphs.
+    * @param {Integer} [options=0] D2D1_DRAW_TEXT_OPTIONS flags: 0 none, 1 no snap, 2 clip, 4 enable color font, 8 disable color bitmap snapping.
+    * @param {Integer} [measuringMode=0] DWRITE_MEASURING_MODE: 0 natural, 1 GDI classic, 2 GDI natural.
+    */
+   static DrawText(rt, text, textFormat, layoutRect, brush, options := 0, measuringMode := 0) {
+      ComCall(27, rt
+         , "Str", text
+         , "UInt", StrLen(text)
+         , "Ptr", textFormat
+         , "Ptr", layoutRect
+         , "Ptr", brush
+         , "Int", options
+         , "Int", measuringMode
+         , "Int")
+   }
+
+   /**
+    * ID2D1RenderTarget::DrawTextLayout (vtable 28). Draws a pre-built text layout at a point. Void; call between BeginDraw and EndDraw.
+    * The D2D1_POINT_2F origin is passed by value, packed into one Int64 (x64 calling convention).
+    * @param {Integer} rt ID2D1RenderTarget pointer.
+    * @param {Number} x Left edge of the layout, in DIPs.
+    * @param {Number} y Top edge of the layout, in DIPs.
+    * @param {Integer} layout IDWriteTextLayout pointer.
+    * @param {Integer} brush ID2D1Brush pointer used to fill the glyphs.
+    * @param {Integer} [options=0] D2D1_DRAW_TEXT_OPTIONS flags (see DrawText).
+    */
+   static DrawTextLayout(rt, x, y, layout, brush, options := 0) {
+      static pt := Buffer(8)
+      NumPut("Float", x, "Float", y, pt)
+      ComCall(28, rt, "Int64", NumGet(pt, "Int64"), "Ptr", layout, "Ptr", brush, "Int", options, "Int")
+   }
+
+   /**
+    * ID2D1RenderTarget::Clear (vtable 47). Fills the whole target with a color. Void; call between BeginDraw and EndDraw.
+    * @param {Integer} rt ID2D1RenderTarget pointer.
+    * @param {D2D1_COLOR_F|Buffer} color Fill color (see D2DText._Color).
+    */
+   static Clear(rt, color) {
+      ComCall(47, rt, "Ptr", color, "Int")
+   }
+
+   /**
+    * ID2D1RenderTarget::BeginDraw (vtable 48). Starts a batch of drawing commands. Void.
+    * @param {Integer} rt ID2D1RenderTarget pointer.
+    */
+   static BeginDraw(rt) {
+      ComCall(48, rt, "Int")
+   }
+
+   /**
+    * ID2D1RenderTarget::EndDraw (vtable 49). Ends the batch and presents it. The HRESULT is returned instead of thrown.
+    * D2DERR_RECREATE_TARGET (0x8899000C) means the device was lost and the target must be recreated.
+    * Mask the result with 0xFFFFFFFF before comparing, because "Int" sign-extends.
+    * @param {Integer} rt ID2D1RenderTarget pointer.
+    * @returns {Integer} HRESULT. 0 = success.
+    */
+   static EndDraw(rt) {
+      return ComCall(49, rt, "Ptr", 0, "Ptr", 0, "Int")
+   }
+
+   /**
+    * ID2D1RenderTarget::SetDpi (vtable 51). Sets the DPI used to map DIPs to pixels. Void.
+    * @param {Integer} rt ID2D1RenderTarget pointer.
+    * @param {Number} dpiX Horizontal DPI.
+    * @param {Number} dpiY Vertical DPI.
+    */
+   static SetDpi(rt, dpiX, dpiY) {
+      ComCall(51, rt, "Float", dpiX, "Float", dpiY, "Int")
+   }
+
+   ; ------------------------------------------------------------------ ID2D1HwndRenderTarget
+
+   /**
+    * ID2D1HwndRenderTarget::CheckWindowState (vtable 57). Reports whether the target window is occluded.
+    * @param {Integer} rt ID2D1HwndRenderTarget pointer.
+    * @returns {Integer} D2D1_WINDOW_STATE flags: 0 none, 1 occluded (nothing is presented while occluded).
+    */
+   static CheckWindowState(rt) {
+      return ComCall(57, rt, "Int")
+   }
+
+   /**
+    * ID2D1HwndRenderTarget::Resize (vtable 58). Resizes the target to the window's new client size.
+    * @param {Integer} rt ID2D1HwndRenderTarget pointer.
+    * @param {D2D1_SIZE_U|Buffer} pixelSize New size in physical pixels.
+    * @throws {OSError} If the target cannot be resized.
+    */
+   static Resize(rt, pixelSize) {
+      ComCall(58, rt, "Ptr", pixelSize)
+   }
+
+   ; ------------------------------------------------------------------ ID2D1SolidColorBrush
+
+   /**
+    * ID2D1SolidColorBrush::SetColor (vtable 8). Changes the brush color. Void.
+    * @param {Integer} brush ID2D1SolidColorBrush pointer.
+    * @param {D2D1_COLOR_F|Buffer} color New color (see D2DText._Color).
+    */
+   static SetColor(brush, color) {
+      ComCall(8, brush, "Ptr", color, "Int")
+   }
+
+   ; ------------------------------------------------------------------ IDWriteFactory
+
+   /**
+    * IDWriteFactory::CreateTextFormat (vtable 15). Creates a text format (font family, weight, size) for drawing text.
+    * @param {Integer} factory IDWriteFactory pointer.
+    * @param {String} family Font family name, e.g. "Segoe UI Emoji".
+    * @param {Number} size Font size in DIPs (points * 96 / 72).
+    * @param {Integer} [weight=400] DWRITE_FONT_WEIGHT: 400 normal, 700 bold.
+    * @param {Integer} [style=0] DWRITE_FONT_STYLE: 0 normal, 1 oblique, 2 italic.
+    * @param {Integer} [stretch=5] DWRITE_FONT_STRETCH: 5 normal.
+    * @param {String} [locale="en-us"] Locale name.
+    * @param {Integer} [collection=0] IDWriteFontCollection pointer. 0 = the system font collection.
+    * @returns {Integer} IDWriteTextFormat pointer. The caller owns it and must ObjRelease it.
+    * @throws {OSError} If the format cannot be created.
+    */
+   static CreateTextFormat(factory, family, size, weight := 400, style := 0, stretch := 5, locale := "en-us", collection := 0) {
+      fmt := 0
+      ComCall(15, factory
+         , "WStr", family
+         , "Ptr", collection
+         , "Int", weight
+         , "Int", style
+         , "Int", stretch
+         , "Float", size
+         , "WStr", locale
+         , "Ptr*", &fmt)
+      return fmt
+   }
+
+   /**
+    * IDWriteFactory::CreateTextLayout (vtable 18). Creates a layout: a string formatted and measured against a text format.
+    * The layout copies the format's current settings, so later changes to the format don't affect it.
+    * @param {Integer} factory IDWriteFactory pointer.
+    * @param {String} text The text to lay out. Its length is passed automatically.
+    * @param {Integer} textFormat IDWriteTextFormat pointer.
+    * @param {Number} maxWidth Layout box width in DIPs.
+    * @param {Number} maxHeight Layout box height in DIPs.
+    * @returns {Integer} IDWriteTextLayout pointer. The caller owns it and must ObjRelease it.
+    * @throws {OSError} If the layout cannot be created.
+    */
+   static CreateTextLayout(factory, text, textFormat, maxWidth, maxHeight) {
+      lay := 0
+      ComCall(18, factory, "WStr", text, "UInt", StrLen(text), "Ptr", textFormat
+         , "Float", maxWidth, "Float", maxHeight, "Ptr*", &lay)
+      return lay
+   }
+
+   ; ------------------------------------------------------------------ IDWriteTextFormat (also valid on IDWriteTextLayout, which inherits it)
+
+   /**
+    * IDWriteTextFormat::SetTextAlignment (vtable 3). Sets horizontal alignment.
+    * @param {Integer} textFormat IDWriteTextFormat or IDWriteTextLayout pointer.
+    * @param {Integer} alignment DWRITE_TEXT_ALIGNMENT: 0 leading (left), 1 trailing (right), 2 centered.
+    * @throws {OSError} If the call fails.
+    */
+   static SetTextAlignment(textFormat, alignment) {
+      ComCall(3, textFormat, "Int", alignment)
+   }
+
+   /**
+    * IDWriteTextFormat::SetParagraphAlignment (vtable 4). Sets vertical alignment of the text block inside its box.
+    * @param {Integer} textFormat IDWriteTextFormat or IDWriteTextLayout pointer.
+    * @param {Integer} alignment DWRITE_PARAGRAPH_ALIGNMENT: 0 near (top), 1 far (bottom), 2 center.
+    * @throws {OSError} If the call fails.
+    */
+   static SetParagraphAlignment(textFormat, alignment) {
+      ComCall(4, textFormat, "Int", alignment)
+   }
+
+   /**
+    * IDWriteTextFormat::SetWordWrapping (vtable 5). Turns word wrapping on or off.
+    * @param {Integer} textFormat IDWriteTextFormat or IDWriteTextLayout pointer.
+    * @param {Integer} wrapping DWRITE_WORD_WRAPPING: 0 wrap at the box edge, 1 no wrapping.
+    * @throws {OSError} If the call fails.
+    */
+   static SetWordWrapping(textFormat, wrapping) {
+      ComCall(5, textFormat, "Int", wrapping)
+   }
+
+   /**
+    * IDWriteTextFormat::SetIncrementalTabStop (vtable 8). Sets the distance between tab stops.
+    * @param {Integer} textFormat IDWriteTextFormat or IDWriteTextLayout pointer.
+    * @param {Number} dips Tab stop width in DIPs.
+    * @returns {Integer} HRESULT, returned instead of thrown. 0 = success.
+    */
+   static SetIncrementalTabStop(textFormat, dips) {
+      return ComCall(8, textFormat, "Float", dips, "Int")
+   }
+
+   /**
+    * IDWriteTextFormat::SetLineSpacing (vtable 10). Sets how line height and baseline are computed.
+    * @param {Integer} textFormat IDWriteTextFormat or IDWriteTextLayout pointer.
+    * @param {Integer} method DWRITE_LINE_SPACING_METHOD: 0 default, 1 uniform, 2 proportional.
+    * @param {Number} lineSpacing Line height in DIPs (a multiplier for proportional).
+    * @param {Number} baseline Distance from the top of the line to its baseline, in DIPs.
+    * @throws {OSError} If the call fails.
+    */
+   static SetLineSpacing(textFormat, method, lineSpacing, baseline) {
+      ComCall(10, textFormat, "Int", method, "Float", lineSpacing, "Float", baseline)
+   }
+
+   ; ------------------------------------------------------------------ IDWriteTextLayout
+
+   /**
+    * IDWriteTextLayout::SetMaxWidth (vtable 28). Sets the layout box width, which wrapping and alignment are measured against.
+    * @param {Integer} layout IDWriteTextLayout pointer.
+    * @param {Number} maxWidth Width in DIPs.
+    * @throws {OSError} If the call fails.
+    */
+   static SetMaxWidth(layout, maxWidth) {
+      ComCall(28, layout, "Float", maxWidth)
+   }
+
+   /**
+    * IDWriteTextLayout::SetMaxHeight (vtable 29). Sets the layout box height.
+    * @param {Integer} layout IDWriteTextLayout pointer.
+    * @param {Number} maxHeight Height in DIPs.
+    * @throws {OSError} If the call fails.
+    */
+   static SetMaxHeight(layout, maxHeight) {
+      ComCall(29, layout, "Float", maxHeight)
+   }
+
+   /**
+    * IDWriteTextLayout::GetMetrics (vtable 60). Measures the laid-out text.
+    * @param {Integer} layout IDWriteTextLayout pointer.
+    * @returns {DWRITE_TEXT_METRICS} Sizes in DIPs; .width is the natural text width without trailing whitespace.
+    * @throws {OSError} If the call fails.
+    */
+   static GetMetrics(layout) {
+      m := DWRITE_TEXT_METRICS()
+      ComCall(60, layout, "Ptr", m)
+      return m
+   }
+}

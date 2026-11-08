@@ -1,48 +1,18 @@
 ; Tom Wilkason with help from claude
 ; Direct Write handler for text widgets
 #Requires AutoHotkey v2.1-
+#Include clsD2D.ahk2
 #DllLoad "ole32.dll"
 #DllLoad "d2d1.dll"
 #DllLoad "dwrite.dll"
-struct D2D1_COLOR_F {
-   r: Float32
-   g: Float32
-   b: Float32
-   a: Float32
-}
-struct D2D1_RECT_F {
-   left  : Float32
-   top   : Float32
-   right : Float32
-   bottom: Float32
-}
-struct D2D1_SIZE_U {
-   width : UInt32
-   height: UInt32
-}
-struct D2D1_PIXEL_FORMAT {
-   format   : UInt32
-   alphaMode: UInt32
-}
-struct D2D1_RENDER_TARGET_PROPERTIES {
-   renderType : UInt32
-   pixelFormat: D2D1_PIXEL_FORMAT
-   dpiX       : Float32
-   dpiY       : Float32
-   usage      : UInt32
-   minLevel   : UInt32
-}
-struct D2D1_HWND_RENDER_TARGET_PROPERTIES {
-   hwnd          : IntPtr
-   pixelSize     : D2D1_SIZE_U
-   presentOptions: UInt32
-}
-struct D2DT_RECT {
+
+struct RECT {
    left  : Int32
    top   : Int32
    right : Int32
    bottom: Int32
 }
+
 /**
  * Renders color text (emoji included) into a Text control using Direct2D / DirectWrite.
  * The background is always transparent: each repaint is filled with the GUI's current BackColor.
@@ -185,7 +155,7 @@ class D2DText {
       ; Alignment: AddText applies Left/Center/Right to the native control, but D2D draws the text itself
       if RegExMatch(options, "i)(?:^|\s)(center|right)(?=\s|$)", &a) {
          inst._align := a[1] = "Center" ? 2 : 1          ; 0 left, 1 right, 2 center
-         ComCall(3, inst._fmt, "Int", inst._align)       ; SetTextAlignment
+         D2D.SetTextAlignment(inst._fmt, inst._align)
       }     
       return inst      
    }
@@ -251,7 +221,7 @@ class D2DText {
    SetColor(fg) {
       this._fg := D2DText._ToRGB(fg)
       if this._brush
-         ComCall(8, this._brush, "Ptr", D2DText._Color(this._fg), "Int")   ; ID2D1SolidColorBrush::SetColor (void)
+         D2D.SetColor(this._brush, D2DText._Color(this._fg))
       this.Refresh()
    }
 
@@ -282,7 +252,7 @@ class D2DText {
     */
    SetAlign(align := "Left") {
       this._align := align = "Center" ? 2 : align = "Right" ? 1 : 0
-      ComCall(3, this._fmt, "Int", this._align)                  ; SetTextAlignment
+      D2D.SetTextAlignment(this._fmt, this._align)
       this.Refresh()
    }
 
@@ -292,7 +262,7 @@ class D2DText {
     */
    SetWrap(on := true) {
       this._wrap := on
-      ComCall(5, this._fmt, "Int", on ? 0 : 1)                   ; SetWordWrapping
+      D2D.SetWordWrapping(this._fmt, on ? 0 : 1)
       this.Refresh()
    }
    /**
@@ -301,7 +271,7 @@ class D2DText {
     */
    SetTabStop(em := 3.5) {
       this._tabEm := em
-      ComCall(8, this._fmt, "Float", em * this._size * 96 / 72, "Int")   ; SetIncrementalTabStop (DIPs)
+      D2D.SetIncrementalTabStop(this._fmt, em * this._size * 96 / 72)   ; DIPs
       this.Refresh()
    }
    Resize() => this.Refresh()
@@ -324,7 +294,7 @@ class D2DText {
     * Returns if the window is occluded or now
     */
    IsOccluded() {
-      Return (ComCall(57, this._rt, "Int") & 1)
+      Return (D2D.CheckWindowState(this._rt) & 1)
    }
    /**
     * Paints immediately: fills with the GUI's BackColor (transparent look) and draws the text. Called from _OnPaint and __New;
@@ -339,7 +309,7 @@ class D2DText {
 
       ; D2D1_WINDOW_STATE_OCCLUDED = 1. Nothing is presented while occluded (lock screen, display off),
       ; and BeginPaint/EndPaint already validated the region, so no further WM_PAINT will come.
-      st := ComCall(57, rt, "Int")                               ; CheckWindowState
+      st := D2D.CheckWindowState(rt)
       If (st & 1) {
          OutputDebug("D2DText occluded, retry " this._retry)
          this._RetryLater()
@@ -347,13 +317,13 @@ class D2DText {
       }
       this._retry := 0
 
-      ComCall(48, rt, "Int")                                     ; BeginDraw (void)
-      ComCall(47, rt, "Ptr", D2DText._Color(D2DText._GuiBack(this._ctrl.Gui)), "Int")   ; Clear (void) with the GUI's current BackColor
+      D2D.BeginDraw(rt)
+      D2D.Clear(rt, D2DText._Color(D2DText._GuiBack(this._ctrl.Gui)))   ; fill with the GUI's current BackColor
 
       this._Render(rt, w, h)
 
-      ; "Int" return type so D2DERR_RECREATE_TARGET is returned instead of thrown
-      hr := ComCall(49, rt, "Ptr", 0, "Ptr", 0, "Int")           ; EndDraw
+      ; EndDraw returns D2DERR_RECREATE_TARGET instead of throwing it
+      hr := D2D.EndDraw(rt)
       if (hr & 0xFFFFFFFF) = 0x8899000C {   ; D2DERR_RECREATE_TARGET
          this._FreeTarget()
          this._CreateTarget()
@@ -373,15 +343,7 @@ class D2DText {
       rc.left := p, rc.top := p
       rc.right := w * this.sf - p, rc.bottom := h * this.sf - p
       ; 4 = D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT
-      ComCall(27, rt
-         , "Str", this._text
-         , "UInt", StrLen(this._text)
-         , "Ptr", this._fmt
-         , "Ptr", rc
-         , "Ptr", this._brush
-         , "Int", 4
-         , "Int", 0
-         , "Int")   ; DrawText (void)
+      D2D.DrawText(rt, this._text, this._fmt, rc, this._brush, 4)
    }
    /** Window was occluded, so try again shortly. Gives up after ~10 s or if the control is hidden (Show repaints it). 
     *  This may happen if the windows is on an offscreen monitor
@@ -413,13 +375,8 @@ class D2DText {
       hp.pixelSize.width := w
       hp.pixelSize.height := h
 
-      rt := 0
-      ComCall(14, D2DText._d2d, "Ptr", rtp, "Ptr", hp, "Ptr*", &rt)       ; CreateHwndRenderTarget
-      this._rt := rt
-
-      br := 0
-      ComCall(8, rt, "Ptr", D2DText._Color(this._fg), "Ptr", 0, "Ptr*", &br)   ; CreateSolidColorBrush
-      this._brush := br
+      this._rt := D2D.CreateHwndRenderTarget(D2DText._d2d, rtp, hp)
+      this._brush := D2D.CreateSolidColorBrush(this._rt, D2DText._Color(this._fg))
    }
    /** Brings the render target in line with the window's current DPI and client size. Called at the start of Draw. */
    _SyncTarget() {
@@ -429,12 +386,12 @@ class D2DText {
          return
       if dpi != this._dpi {
          this._dpi := dpi, this.sf := 96 / dpi
-         ComCall(51, this._rt, "Float", dpi, "Float", dpi, "Int")   ; ID2D1RenderTarget::SetDpi (void)
+         D2D.SetDpi(this._rt, dpi, dpi)
       }
       sz := D2D1_SIZE_U()
       sz.width := w, sz.height := h
       this._pw := w, this._ph := h
-      ComCall(58, this._rt, "Ptr", sz)                              ; ID2D1HwndRenderTarget::Resize
+      D2D.Resize(this._rt, sz)
    }
    /**
     * Creates the IDWriteTextFormat from the current font and size (points, converted to DIPs),
@@ -442,22 +399,12 @@ class D2DText {
     * @throws {OSError} If the text format cannot be created.
     */
    _CreateFormat() {
-      fmt := 0
-      ComCall(15, D2DText._dw
-         , "WStr", this._font
-         , "Ptr", 0
-         , "Int", this._weight
-         , "Int", 0
-         , "Int", 5
-         , "Float", this._size * 96 / 72
-         , "WStr", "en-us"
-         , "Ptr*", &fmt
-      )                        ; CreateTextFormat
+      fmt := D2D.CreateTextFormat(D2DText._dw, this._font, this._size * 96 / 72, this._weight)   ; size in DIPs
       this._fmt := fmt
-      ComCall(3, fmt, "Int", this._align)                        ; SetTextAlignment
-      ComCall(5, fmt, "Int", this._wrap ? 0 : 1)                 ; SetWordWrapping
+      D2D.SetTextAlignment(fmt, this._align)
+      D2D.SetWordWrapping(fmt, this._wrap ? 0 : 1)
       if this._tabEm
-         ComCall(8, fmt, "Float", this._tabEm * this._size * 96 / 72, "Int")   ; SetIncrementalTabStop
+         D2D.SetIncrementalTabStop(fmt, this._tabEm * this._size * 96 / 72)
       this._ApplyLineHeight()
    }
 
@@ -530,7 +477,7 @@ class D2DText {
    /** Applies the stored uniform line height to the current text format, if one was set. */
    _ApplyLineHeight() {
       if this._lineH
-         ComCall(10, this._fmt, "Int", 1, "Float", this._lineH, "Float", this._lineBase)   ; SetLineSpacing, UNIFORM
+         D2D.SetLineSpacing(this._fmt, 1, this._lineH, this._lineBase)   ; 1 = DWRITE_LINE_SPACING_METHOD_UNIFORM
    }
 
    /**
@@ -579,7 +526,7 @@ class D2DText {
     * @param {VarRef} h Receives the height in pixels.
     */
    _ClientSize(&w, &h) {
-      DllCall("GetClientRect", "Ptr", this._ctrl.Hwnd, D2DT_RECT, rc:= D2DT_RECT())
+      DllCall("GetClientRect", "Ptr", this._ctrl.Hwnd, RECT, rc:= RECT())
       w := rc.right, h := rc.bottom
    }
 
@@ -703,12 +650,8 @@ class D2DGrid extends D2DText {
 
    /** Creates a layout for s from the shared format; &w receives its natural width in DIPs. The caller owns the layout. */
    _NewLayout(s, &w) {
-      lay := 0
-      ComCall(18, D2DText._dw, "WStr", s, "UInt", StrLen(s), "Ptr", this._fmt
-         , "Float", 10000, "Float", 10000, "Ptr*", &lay)        ; CreateTextLayout
-      m := Buffer(40, 0)
-      ComCall(60, lay, "Ptr", m)                                ; GetMetrics (DWRITE_TEXT_METRICS)
-      w := NumGet(m, 8, "Float")
+      lay := D2D.CreateTextLayout(D2DText._dw, s, this._fmt, 10000, 10000)
+      w := D2D.GetMetrics(lay).width
       return lay
    }
    /** Computes each column's x and width. Run lazily from _Render when columns, rows or font changed. */
@@ -797,10 +740,10 @@ class D2DGrid extends D2DText {
             For it in items {
                c := cols[it.ci], e := cols[it.ci + it.span - 1]
                it.x := c.x
-               ComCall(28, it.p, "Float", e.x + e.cw - c.x)         ; SetMaxWidth
-               ComCall(29, it.p, "Float", rh)                       ; SetMaxHeight
+               D2D.SetMaxWidth(it.p, e.x + e.cw - c.x)
+               D2D.SetMaxHeight(it.p, rh)
                If it.al != this._align
-                  ComCall(3, it.p, "Int", it.al)                    ; SetTextAlignment (the layout was created with this._align)
+                  D2D.SetTextAlignment(it.p, it.al)   ; the layout was created with this._align
             }
          this._dirty := false
       } Finally {
@@ -819,7 +762,6 @@ class D2DGrid extends D2DText {
     * @returns {unset?}
     */
    _Render(rt, w, h) {
-      static pt := Buffer(8)
       dw := w * this.sf                                          ; client width in DIPs (w is physical pixels)
       if this._dirty || (this._justify && dw != this._lastW)
          this._Layout(dw)
@@ -829,13 +771,12 @@ class D2DGrid extends D2DText {
          for it in items {
             want := it.c = "" ? this._fg : it.c
             if want != clr
-               ComCall(8, this._brush, "Ptr", D2DText._Color(clr := want), "Int")   ; SetColor
-            NumPut("Float", it.x, "Float", y, pt)                                    ; D2D1_POINT_2F is passed by value
-            ComCall(28, rt, "Int64", NumGet(pt, "Int64"), "Ptr", it.p, "Ptr", this._brush, "Int", 4, "Int")   ; DrawTextLayout (void)
+               D2D.SetColor(this._brush, D2DText._Color(clr := want))
+            D2D.DrawTextLayout(rt, it.x, y, it.p, this._brush, 4)   ; 4 = D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT
          }
       }
       if clr != this._fg
-         ComCall(8, this._brush, "Ptr", D2DText._Color(this._fg), "Int")
+         D2D.SetColor(this._brush, D2DText._Color(this._fg))
    }  
 }
 ;@reference DirectWriteClass.d.ahk
@@ -907,3 +848,4 @@ QPC() {
    DllCall("QueryPerformanceCounter", "Int64*", &t := 0)
    return t * 1000 / freq
 }
+
