@@ -191,9 +191,9 @@ class D2DText {
    }
    /** Releases the COM resources and breaks the ctrl <-> instance cycle. Call before destroying the GUI. */
    Dispose() {
-      this.__Delete()               ; safe to run again later: every pointer is zeroed
+      this.__Delete()
       if this._ctrl {
-         try this._ctrl.D2D := ""
+         try this._ctrl.DeleteProp("D2D")
          this._ctrl := ""
       }
    }
@@ -323,7 +323,7 @@ class D2DText {
    /**
     * Returns if the window is occluded or now
     */
-   Static IsOccluded() {
+   IsOccluded() {
       Return (ComCall(57, this._rt, "Int") & 1)
    }
    /**
@@ -368,8 +368,8 @@ class D2DText {
     * @param {Integer} h Client height in physical pixels.
     */
    _Render(rt, w, h) {
+      Static rc := D2D1_RECT_F()
       p := this._pad
-      rc := D2D1_RECT_F()
       rc.left := p, rc.top := p
       rc.right := w * this.sf - p, rc.bottom := h * this.sf - p
       ; 4 = D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT
@@ -556,8 +556,8 @@ class D2DText {
       Critical()
       ps := Buffer(A_PtrSize = 8 ? 72 : 64, 0)                     ; PAINTSTRUCT
       DllCall("BeginPaint", "Ptr", this._ctrl.Hwnd, "Ptr", ps, "Ptr")
-      this.Draw()
-      DllCall("EndPaint", "Ptr", this._ctrl.Hwnd, "Ptr", ps)
+      Try this.Draw()
+      Finally DllCall("EndPaint", "Ptr", this._ctrl.Hwnd, "Ptr", ps)
       ; OutputDebug("WeatherWidget OnPaint Received: " this._ctrl.Hwnd)
       return 0
    }
@@ -807,13 +807,22 @@ class D2DGrid extends D2DText {
          Critical(prev)
       }
    }
-
+   /**
+    * Draw the cached text layouts for every row into the render target, re-laying them out first
+    * when the content is dirty or (when justified) the client width has changed.
+    * Items with their own color are drawn with the shared brush temporarily switched to that color;
+    * the brush is restored to the default foreground color afterwards.
+    * @param {Integer} rt ID2D1RenderTarget interface pointer to draw into (between BeginDraw/EndDraw)
+    * @param {Integer} w Client width in physical pixels (scaled by this.sf to DIPs)
+    * @param {Integer} h Client height in physical pixels (unused)
+    * @returns {unset?}
+    */
    _Render(rt, w, h) {
+      static pt := Buffer(8)
       dw := w * this.sf                                          ; client width in DIPs (w is physical pixels)
       if this._dirty || (this._justify && dw != this._lastW)
          this._Layout(dw)
       rh := this._lineH, clr := this._fg
-      pt := Buffer(8)
       for r, items in this._items {
          y := this._pad + (r - 1) * rh
          for it in items {

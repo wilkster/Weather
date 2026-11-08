@@ -122,7 +122,7 @@ class Weather {
    Static emoji := map(
        0, "☀️",         ;"Clear",
        1, "🌤️",        ;"Mainly clear",
-       2, "⛅",        ;"Partly cloudy",
+       2, "⛅",        ;"Partly cloudy", 🌥️
        3, "☁️",         ;"Overcast",
       45, "🌫️",        ;"Fog",
       48, "🌫️",        ;"Rime fog",
@@ -138,13 +138,13 @@ class Weather {
       67, "🧊",        ;"Freezing rain",
       71, "🌨️",        ;"Light snow",
       73, "❄",        ;"Snow",
-      75, "⛄",       ;"Heavy snow",
+      75, "☃️",       ;"Heavy snow",
       77, "🌨️",        ;"Snow grains",
       80, "🌦️",       ;"Light showers",
       81, "🌦️",       ;"Showers",
       82, "⛈️",        ;"Heavy showers",
       85, "❄",        ;"Snow showers",
-      86, "⛄",        ;"Heavy snow showers",
+      86, "☃️",        ;"Heavy snow showers",
       95, "🌩️",        ;"Thunderstorm",
       96, "⛈️",        ;"Thunderstorm, hail",
       97, "🌩️",        ;"Heavy Thunderstorm",
@@ -205,7 +205,18 @@ class Weather {
       OnExit this.SaveOnExit.bind(this)
       Sleep(100)
    }
-   Static hasInternet => ComObject("{DCB00C01-570F-4A9B-8D69-199FDBA5723B}").IsConnectedToInternet
+   /**
+    * Determine if windows thinks it is connected to the internet
+    * @returns {boolean} true if it is, false if not 
+    */
+   Static hasInternet {
+      get {
+         Try
+            Return ComObject("{DCB00C01-570F-4A9B-8D69-199FDBA5723B}").IsConnectedToInternet
+         Catch
+            Return false
+      }
+   }   
    /**
     * Build/Rebuild the GUI
     * @returns {unset?} 
@@ -1361,9 +1372,8 @@ SetupEventMonitoring() {
          OutputDebug("WeatherWidget: Session Change : Locked")
          SetTimer(Weather.cbUpdateData, 0)
       } Else If (wParam = WTS_SESSION_UNLOCK) {
-         Weather.RefreshMe()
          OutputDebug("WeatherWidget: Session Change : Unlocked")
-         SetTimer(Weather.cbUpdateData, -5000)
+         SetTimer(Weather.cbUpdateData, -2000)
       }
    }
    /**
@@ -1373,8 +1383,7 @@ SetupEventMonitoring() {
       Static PBT_APMRESUMESUSPEND := 0x7, PBT_APMRESUMEAUTOMATIC := 0x12
       Switch wParam {
          Case PBT_APMRESUMESUSPEND, PBT_APMRESUMEAUTOMATIC:
-            Weather.RefreshMe()
-            SetTimer(Weather.cbUpdateData, -8000)
+            SetTimer(Weather.cbUpdateData, -5000)
             OutputDebug("WeatherWidget: Resume from Standby")
          Default:
       }
@@ -1385,13 +1394,13 @@ SetupEventMonitoring() {
     * lParam is resolution (low word is width, high word is height)
     */
    cbDisplayChange(wParam, lParam, msg, hwnd) {
-      SetTimer(RefreshGui, -4000)   ; let the display stack settle first
+      ; SetTimer(RefreshGui, -4000)   ; let the display stack settle first
       SetTimer(Weather.cbUpdateData, -2000)
       Return
-      Static RefreshGui() {
-         OutputDebug("WeatherWidget: Refresh due to Display Change")
-         Weather.RefreshMe()
-      }
+      ; Static RefreshGui() {
+      ;    OutputDebug("WeatherWidget: Refresh due to Display Change")
+      ;    Weather.RefreshMe()
+      ; }
    }
    ;----------------------------------------------------------------------
    ; On exit, unregister handlers
