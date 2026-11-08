@@ -13,7 +13,6 @@ TODO
 - seems to stay on all desktops, this is desired
 - Don't make static so would could have multiple instances at once for different locations
   Pass in location name into __Init
-- name should be userName, returned should be fullName
 - Consider differnt layouts like MAC OS weather widget
 - https://github.com/Makin-Things/weather-icons (SVG, some are animated)
 */
@@ -38,9 +37,10 @@ class Weather {
    Static ColorCodeDaily  := 1
    Static Assets          := A_ScriptDir . "\Assets\"
    Static Model           := "auto"
-   Static RangeWidth      := 7 ; characters, could be a setting
+   Static RangeWidth      := 30 ; characters, could be a setting
    Static cbRefreshMe     := this.RefreshMe.Bind(this)
    Static cbUpdateData    := this.RefreshData.bind(this)
+   Static Launched        := A_TickCount
 
   /*
       WMO Weather Codes Reference
@@ -447,22 +447,6 @@ class Weather {
       } Else
          this.Menu.Add("Refresh now", this.cbUpdateData)      
 
-      ; If (FileExist(this.iniFile)) {
-      ;    this.Menu.Add("Manage Locations", (*) => LocationManager.Show())  ; Creates a new menu item.
-      ;    Try this.Menu.SetIcon("Manage Locations", this.Assets "Location.Ico")
-      ;    this.Menu.Add()
-      ;    maxLoc :=IniRead(this.iniFile, "Default", "Max Locations", 50)
-      ;    for idx,loc in this.ReadLocations(this.iniFile) {
-      ;       this.menu.add(loc, this.setlocation.bind(this))
-      ;       if (loc = this.userName)
-      ;          this.menu.Check(loc)
-      ;       if idx >= maxLoc
-      ;          break
-      ;    }
-      ; } Else {
-      ;    ; Add this if we don't yet have an INI file
-      ;    this.Menu.Add("Refresh now", this.cbUpdateData)
-      ; }
       this.Menu.add()
       this.Menu.Add("Display Max Hourly Rows", this.BuildNumMenu("maxRows", "Max Rows", 15,1, 0))
       this.Menu.Add("Display Hourly Interval", this.BuildNumMenu("hourIncrement", "Hours Increment", 6))
@@ -1070,18 +1054,19 @@ class Weather {
       }
       /**
        * Range bar for one day's low/high relative to the lowest low and highest high of all days shown.
-       * n cells at half-cell resolution: █ ▌ ▐ inside the range, ░ outside. Pass Round()ed integers.
+       * Uses a narrow vert bar and narrow space to build up the row
        */
-      Static RangeBar(lo, hi, minLo, maxHi, n := 6, today?) {
-         Static marker := "⭕" ;
-         Static glyphs := [[" ", 0, 0], ["▏", 0, 1], ["▎", 0, 2], ["▍", 0, 3], ["▌", 0, 4], ["▋", 0, 5]
-                        , ["▊", 0, 6], ["▉", 0, 7], ["█", 0, 8], ["▐", 4, 8], ["▕", 7, 8]]   ; [glyph, filled from, filled to] in eighths
+      Static RangeBar(lo, hi, minLo, maxHi, n := 36, today?) {
+         ; fill is 5.7, space is 6.5, not as good as match as below
+         ; Static fill := Chr(0x258F), gap := Chr(0x200A), marker := "⭕", mw := 12   ; 71 / 6 ≈ 12 cells
+         ; n*=2
+         ; fill is 11.8, space is 11.6, not exact but very close
+         Static fill := Chr(0x258E), gap := Chr(0x205F), marker := "⭕", mw := 6   ; 71 / 6 ≈ 12 cells
          span := Max(maxHi - minLo, 1)
-         u := 8 * n                                                        ; eighth-cell units
-         s := Max(0, Min(u - 1, (lo - minLo) * u // span))                 ; first filled unit
-         e := Max(s + 1, Min(u, ((hi - minLo) * u + span - 1) // span))    ; one past the last filled unit, at least one
-         m := (IsSet(today) && today != "")                                ; marker cell, 0 = none
-            ? Max(1, Min(n, (Round(today) - minLo) * n // span + 1))
+         cell := v => Max(1, Min(n, (v - minLo) * n // span + 1))                  ; value -> cell number
+         s := cell(lo), e := cell(hi)
+         m := (today ?? "") != ""
+            ? Max(1, Min(n - mw + 1, cell(Round(today)) - mw // 2 + 1))            ; first cell the marker covers
             : 0
          bar := ""
          Loop n {
@@ -1089,24 +1074,13 @@ class Weather {
                bar .= marker
                Continue
             }
-            c0 := (A_Index - 1) * 8
-            a := Max(s, c0) - c0, b := Min(e, c0 + 8) - c0                 ; covered part of this cell, 0..8
-            If (b <= a) {
-               bar .= glyphs[1][1]
+            If (m && A_Index > m && A_Index < m + mw)                              ; cells hidden under the marker
                Continue
-            }
-            best := 99, pick := glyphs[1][1]
-            For g in glyphs {
-               d := Abs(g[2] - a) + Abs(g[3] - b)
-               If (d < best)
-                  best := d, pick := g[1]
-            }
-            bar .= pick
+            bar .= (A_Index >= s && A_Index <= e) ? fill : gap
          }
          Return bar
       }
    }
-
    Static Dpi()               => DllCall("GetDpiForWindow", "Ptr", Weather.Gui.Hwnd, "UInt")
    static Section(json, name) => RegExMatch(json, '"' name '":\{([^}]*)\}', &m) ? m[1] : ""
    static Value(sec, key)     => RegExMatch(sec, '"' key '":(-?[\d.]+)', &m) ? m[1] : ""
@@ -1397,6 +1371,8 @@ SetupEventMonitoring() {
             SetTimer(Weather.cbRefreshMe, -8000)   ; let the display stack settle first
             OutputDebug("WeatherWidget: Resume from Standby")
          Case PBT_POWERSETTINGCHANGE: ; Monitor power times out
+            if ((A_TickCount - Weather.Launched) < 5000)
+               Return
             ; GUID_SESSION_DISPLAY_STATUS
             ; Is this notification for GUID_CONSOLE_DISPLAY_STATE?"
             ; GUID_CONSOLE_DISPLAY_STATE {6FE69556-704A-47A0-8F24-C28D936FDA47}
