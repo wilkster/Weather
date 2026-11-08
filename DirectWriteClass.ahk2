@@ -762,7 +762,7 @@ class D2DGrid extends D2DText {
                   c := cols[it.ci + A_Index - 1]
                   cov += c.cw
                   If A_Index < it.span
-                     cov += c.HasProp("gap") ? c.gap : this._gap
+                     cov += (c.gap ?? this._gap)
                }
                If it.tw > cov
                   e.cw += it.tw - cov
@@ -771,7 +771,8 @@ class D2DGrid extends D2DText {
          x := this._pad
          For c in cols {
             c.x := x
-            x += c.cw + (c.HasProp("gap") ? c.gap : this._gap)
+            x += c.cw + (c.gap ?? this._gap)
+            ; x += c.cw + (c.HasProp("gap") ? c.gap : this._gap)
          }
          this._natW := nc ? cols[nc].x + cols[nc].cw + this._pad : 2 * this._pad   ; natural width, before any stretching
          ; stretch: spread the surplus over the inner gaps in proportion to their size, so tight pairs stay tight
@@ -780,12 +781,12 @@ class D2DGrid extends D2DText {
             tot := 0
             For i, c in cols
                If i < nc
-                  tot += c.HasProp("gap") ? c.gap : this._gap
+                  tot += (c.gap ?? this._gap)
             acc := 0
             For i, c in cols {
                c.x += acc
                If i < nc {
-                  g := c.HasProp("gap") ? c.gap : this._gap
+                  g := (c.gap ?? this._gap)
                   acc += extra * (tot > 0 ? g / tot : 1 / (nc - 1))
                }
             }
