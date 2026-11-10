@@ -486,11 +486,11 @@ class D2DText {
     * control's handler list doesn't keep the instance alive and __Delete can run.
     */
    _HookPaint() {
-      this._dpiFn := (*) => ObjFromPtrAddRef(ptr).Refresh()
-      this._ctrl.OnMessage(0x02E3, this._dpiFn)     ; WM_DPICHANGED_AFTERPARENT
-      ptr := ObjPtr(this)
+      ptr           := ObjPtr(this)
+      this._dpiFn   := (*) => ObjFromPtrAddRef(ptr).Refresh()
       this._paintFn := (*) => ObjFromPtrAddRef(ptr)._OnPaint()
       this._eraseFn := (*) => 1
+      this._ctrl.OnMessage(0x02E3, this._dpiFn)     ; WM_DPICHANGED_AFTERPARENT
       this._ctrl.OnMessage(0x000F, this._paintFn)   ; WM_PAINT
       this._ctrl.OnMessage(0x0014, this._eraseFn)   ; WM_ERASEBKGND
    }
