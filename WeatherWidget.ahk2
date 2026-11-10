@@ -5,6 +5,7 @@
 ;@Ahk2Exe-SetCopyright Copyright (c) 2026 Tom Wilkason
 ;@Ahk2Exe-SetOrigFilename Weather.exe
 ;@Ahk2Exe-SetMainIcon Partly Cloudy.ico
+;@Ahk2Exe-AddResource WeatherWidget.manifest
 #SingleInstance Off
 #Requires AutoHotkey v2.1-
 #include DirectWriteClass.ahk2
@@ -37,7 +38,7 @@ class Weather {
    Static ColorCodeDaily  := 1
    Static Assets          := A_ScriptDir . "\Assets\"
    Static Model           := "auto"
-   Static RangeWidth      := 30 ; characters, could be a setting
+   Static RangeWidth      := 28 ; characters, could be a setting
    Static cbRefreshMe     := this.RefreshMe.Bind(this)
    Static cbUpdateData    := this.RefreshData.bind(this)
    Static Launched        := A_TickCount
@@ -987,7 +988,7 @@ class Weather {
             rows.Push([
                i == 1 ? "Today" : FormatTime(Trim(StrReplace(days[i], '-'), '"'), "dd ddd")
                , { t: this.fixfix(lows[i] "°"), c: cc ? TempColor(lows[i], loMin, loMax) : tc }
-               , { t: RangeBar(lows[i], highs[i], loMin, hiMax, this.RangeWidth, i==1 ? tf : unset), c: "0x6ca8c7"} ;tcrb
+               , { t: RangeBar(lows[i], highs[i], loMin, hiMax, this.RangeWidth, i==1 ? tf : ""), c: "0x6ca8c7"} ;tcrb
                , { t: this.fixfix(highs[i] "°"), c: cc ? TempColor(highs[i], hiMin, hiMax) : tc }
                , this.emoji.get(Integer(codes[i]), "🌈")
                , pVal
@@ -1056,7 +1057,7 @@ class Weather {
        * Range bar for one day's low/high relative to the lowest low and highest high of all days shown.
        * Uses a narrow vert bar and narrow space to build up the row
        */
-      Static RangeBar(lo, hi, minLo, maxHi, n := 36, today?) {
+      Static RangeBar(lo, hi, minLo, maxHi, n := 36, today:="") {
          ; fill is 5.7, space is 6.5, not as good as match as below
          ; Static fill := Chr(0x258F), gap := Chr(0x200A), marker := "⭕", mw := 12   ; 71 / 6 ≈ 12 cells
          ; n*=2
@@ -1065,9 +1066,7 @@ class Weather {
          span := Max(maxHi - minLo, 1)
          cell := v => Max(1, Min(n, (v - minLo) * n // span + 1))                  ; value -> cell number
          s := cell(lo), e := cell(hi)
-         m := (today ?? "") != ""
-            ? Max(1, Min(n - mw + 1, cell(Round(today)) - mw // 2 + 1))            ; first cell the marker covers
-            : 0
+         m := today ? Max(1, Min(n - mw + 1, cell(Round(today)) - mw // 2 + 1)) : 0           ; first cell the marker covers
          bar := ""
          Loop n {
             If (A_Index = m) {
