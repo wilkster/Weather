@@ -27,6 +27,20 @@ struct D2D1_RECT_F {
    right : Float32
    bottom: Float32
 }
+struct D2D1_ROUNDED_RECT {
+   left   : Float32
+   top    : Float32
+   right  : Float32
+   bottom : Float32
+   radiusX: Float32
+   radiusY: Float32
+}
+struct D2D1_ELLIPSE {
+   x      : Float32
+   y      : Float32
+   radiusX: Float32
+   radiusY: Float32
+}
 struct D2D1_SIZE_U {
    width : UInt32
    height: UInt32
@@ -96,6 +110,50 @@ class D2D {
    }
 
    /**
+    * ID2D1RenderTarget::CreateGradientStopCollection (vtable 9). Builds the color stops used by a gradient brush.
+    * Stops are packed as D2D1_GRADIENT_STOP (position float + D2D1_COLOR_F = 20 bytes each).
+    * @param {Integer} rt ID2D1RenderTarget pointer.
+    * @param {Array} colors 0xRRGGBB colors, spread evenly from position 0 to 1.
+    * @param {Integer} [gamma=0] D2D1_GAMMA: 0 = interpolate in sRGB (2.2), 1 = linear (1.0).
+    * @param {Integer} [extendMode=0] D2D1_EXTEND_MODE: 0 clamp, 1 wrap, 2 mirror.
+    * @returns {Integer} ID2D1GradientStopCollection pointer. The caller owns it and must ObjRelease it.
+    * @throws {OSError} If the collection cannot be created.
+    */
+   static CreateGradientStopCollection(rt, colors, gamma := 0, extendMode := 0) {
+      n := colors.Length
+      buf := Buffer(20 * n)
+      for i, rgb in colors {
+         rgb := Integer(rgb)
+         NumPut("Float", n > 1 ? (i - 1) / (n - 1) : 0
+              , "Float", (rgb >> 16 & 0xFF) / 255, "Float", (rgb >> 8 & 0xFF) / 255, "Float", (rgb & 0xFF) / 255
+              , "Float", 1.0, buf, (i - 1) * 20)
+      }
+      coll := 0
+      ComCall(9, rt, "Ptr", buf, "UInt", n, "Int", gamma, "Int", extendMode, "Ptr*", &coll)
+      return coll
+   }
+
+   /**
+    * ID2D1RenderTarget::CreateLinearGradientBrush (vtable 10). Creates a brush that blends the stops along a line.
+    * The line can be moved later with SetStartPoint / SetEndPoint.
+    * @param {Integer} rt ID2D1RenderTarget pointer.
+    * @param {Integer} stops ID2D1GradientStopCollection pointer (the brush keeps its own reference).
+    * @param {Number} [x0=0] Start point x, in DIPs.
+    * @param {Number} [y0=0] Start point y, in DIPs.
+    * @param {Number} [x1=1] End point x, in DIPs.
+    * @param {Number} [y1=0] End point y, in DIPs.
+    * @returns {Integer} ID2D1LinearGradientBrush pointer. The caller owns it and must ObjRelease it.
+    * @throws {OSError} If the brush cannot be created.
+    */
+   static CreateLinearGradientBrush(rt, stops, x0 := 0, y0 := 0, x1 := 1, y1 := 0) {
+      props := Buffer(16)                                          ; D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES: two D2D1_POINT_2F
+      NumPut("Float", x0, "Float", y0, "Float", x1, "Float", y1, props)
+      br := 0
+      ComCall(10, rt, "Ptr", props, "Ptr", 0, "Ptr", stops, "Ptr*", &br)
+      return br
+   }
+
+   /**
     * ID2D1RenderTarget::DrawRectangle (vtable 16). Draws the outline of a rectangle. Void; call between BeginDraw and EndDraw.
     * @param {Integer} rt ID2D1RenderTarget pointer.
     * @param {D2D1_RECT_F|Buffer} rect Rectangle (left, top, right, bottom floats) in DIPs.
@@ -115,6 +173,38 @@ class D2D {
     */
    static FillRectangle(rt, rect, brush) {
       ComCall(17, rt, "Ptr", rect, "Ptr", brush, "Int")
+   }
+
+   /**
+    * ID2D1RenderTarget::FillRoundedRectangle (vtable 19). Fills a rectangle with rounded corners. Void; call between BeginDraw and EndDraw.
+    * @param {Integer} rt ID2D1RenderTarget pointer.
+    * @param {D2D1_ROUNDED_RECT|Buffer} rrect Rectangle plus corner radii, in DIPs.
+    * @param {Integer} brush ID2D1Brush pointer used to fill the shape.
+    */
+   static FillRoundedRectangle(rt, rrect, brush) {
+      ComCall(19, rt, "Ptr", rrect, "Ptr", brush, "Int")
+   }
+
+   /**
+    * ID2D1RenderTarget::DrawEllipse (vtable 20). Draws the outline of an ellipse. Void; call between BeginDraw and EndDraw.
+    * @param {Integer} rt ID2D1RenderTarget pointer.
+    * @param {D2D1_ELLIPSE|Buffer} ellipse Center point and radii, in DIPs.
+    * @param {Integer} brush ID2D1Brush pointer used to paint the outline.
+    * @param {Number} [strokeWidth=1.0] Outline width in DIPs.
+    * @param {Integer} [strokeStyle=0] ID2D1StrokeStyle pointer. 0 = solid.
+    */
+   static DrawEllipse(rt, ellipse, brush, strokeWidth := 1.0, strokeStyle := 0) {
+      ComCall(20, rt, "Ptr", ellipse, "Ptr", brush, "Float", strokeWidth, "Ptr", strokeStyle, "Int")
+   }
+
+   /**
+    * ID2D1RenderTarget::FillEllipse (vtable 21). Fills an ellipse. Void; call between BeginDraw and EndDraw.
+    * @param {Integer} rt ID2D1RenderTarget pointer.
+    * @param {D2D1_ELLIPSE|Buffer} ellipse Center point and radii, in DIPs.
+    * @param {Integer} brush ID2D1Brush pointer used to fill the shape.
+    */
+   static FillEllipse(rt, ellipse, brush) {
+      ComCall(21, rt, "Ptr", ellipse, "Ptr", brush, "Int")
    }
 
    /**
@@ -223,6 +313,33 @@ class D2D {
     */
    static SetColor(brush, color) {
       ComCall(8, brush, "Ptr", color, "Int")
+   }
+
+   ; ------------------------------------------------------------------ ID2D1LinearGradientBrush
+
+   /**
+    * ID2D1LinearGradientBrush::SetStartPoint (vtable 8). Moves the start of the gradient line. Void.
+    * The D2D1_POINT_2F is passed by value, packed into one Int64 (x64 calling convention).
+    * @param {Integer} brush ID2D1LinearGradientBrush pointer.
+    * @param {Number} x Start point x, in DIPs.
+    * @param {Number} y Start point y, in DIPs.
+    */
+   static SetStartPoint(brush, x, y) {
+      static pt := Buffer(8)
+      NumPut("Float", x, "Float", y, pt)
+      ComCall(8, brush, "Int64", NumGet(pt, "Int64"), "Int")
+   }
+
+   /**
+    * ID2D1LinearGradientBrush::SetEndPoint (vtable 9). Moves the end of the gradient line. Void.
+    * @param {Integer} brush ID2D1LinearGradientBrush pointer.
+    * @param {Number} x End point x, in DIPs.
+    * @param {Number} y End point y, in DIPs.
+    */
+   static SetEndPoint(brush, x, y) {
+      static pt := Buffer(8)
+      NumPut("Float", x, "Float", y, pt)
+      ComCall(9, brush, "Int64", NumGet(pt, "Int64"), "Int")
    }
 
    ; ------------------------------------------------------------------ IDWriteFactory

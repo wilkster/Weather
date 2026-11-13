@@ -549,8 +549,11 @@ class D2DText {
  * Widths and gaps are in DIPs (1/96 inch), like pad. Wrapping is off.
  *   Column: {al: "Left"|"Right"|"Center", w: DIPs | "auto", gap: DIPs after this column (default: SetGap, 8)}
  *   Cell:   a string, or {t: text, c: 0xRRGGBB, al: alignment override, span: number of columns to cover}
+ *           or a range bar {bar: [lo, hi, now?]} (see SetBarScale)
  * A cell with span > 1 is aligned within the combined width of the columns it covers and does not affect auto
  * widths, which makes it suitable for headers.
+ * A range bar cell draws a rounded track across its column, a gradient-filled pill from lo to hi on the scale set
+ * by SetBarScale, and, when now is given, a dot at that value. Give its column a fixed width (w: DIPs).
  * @example
  * g := myGui.AddD2DGrid("w300 cD7DCFF")
  * g.SetColumns([{al: "Left", w: "auto"}, {al: "Right", w: "auto", gap: 3}, {al: "Left", w: "auto"}])
@@ -560,6 +563,8 @@ class D2DText {
 class D2DGrid extends D2DText {
    _cols := [], _rows := [], _gap := 8, _dirty := true, _items := []
    _justify := false, _lastW := 0, _natW := 0
+   /** Range bar scale (value at the left and right end of the track), gradient colors, and the gradient brush. */
+   _barMin := 0, _barMax := 1, _barStops := [], _gradBrush := 0
    __New(args*) {
       super.__New(args*)
       this.SetWrap(false)
@@ -568,6 +573,29 @@ class D2DGrid extends D2DText {
    __Delete() {
       this._FreeLayouts()
       super.__Delete()
+   }
+   /** Releases the gradient brush along with the render target and solid brush (it belongs to the target). */
+   _FreeTarget() {
+      if this._gradBrush
+         ObjRelease(this._gradBrush), this._gradBrush := 0
+      super._FreeTarget()
+   }
+   /**
+    * Sets the value range that range bar cells ({bar: [lo, hi, now?]}) are drawn against, and the gradient colors.
+    * The gradient spans the whole track, so each bar shows its own slice of one shared color scale.
+    * Takes effect on the next paint, so call it before SetRows.
+    * @param {Number} lo Value at the left end of the track.
+    * @param {Number} hi Value at the right end of the track.
+    * @param {Array} [stops] 0xRRGGBB colors spread evenly from left to right. Omit to keep the current ones;
+    *                        with no stops at all the bar is drawn in the cell's c color (or the text color).
+    */
+   SetBarScale(lo, hi, stops?) {
+      this._barMin := lo, this._barMax := hi
+      if IsSet(stops) {
+         this._barStops := stops
+         if this._gradBrush
+            ObjRelease(this._gradBrush), this._gradBrush := 0   ; rebuilt with the new colors on the next paint
+      }
    }
 /** Natural width in DIPs of pad + columns + inner gaps */
    ContentW {
@@ -580,7 +608,8 @@ class D2DGrid extends D2DText {
    _FreeLayouts() {
       for items in this._items
          for it in items
-            ObjRelease(it.p)
+            if it.p                                              ; range bar items have no layout
+               ObjRelease(it.p)
       this._items := []
    }
 
@@ -677,6 +706,15 @@ class D2DGrid extends D2DText {
                If ci > nc
                   Break
                span := Min(D2DGrid._Span(cell), nc - ci + 1)
+               If IsObject(cell) && cell.HasProp("bar") {
+                  c := cols[ci]
+                  If span = 1 && !(c.HasProp("w") && (c.w is Number))
+                     c.cw := Max(c.cw, 60)                       ; auto column: give the bar something to draw in
+                  items.Push({ p: 0, ci: ci, span: span, tw: 0, bar: cell.bar, al: c.a
+                     , c: cell.HasProp("c") ? D2DText._ToRGB(cell.c) : "" })
+                  ci += span
+                  Continue
+               }
                t := D2DGrid._T(cell)
                If t != "" {
                   c := cols[ci]
@@ -739,8 +777,10 @@ class D2DGrid extends D2DText {
          For items in this._items
             For it in items {
                c := cols[it.ci], e := cols[it.ci + it.span - 1]
-               it.x := c.x
-               D2D.SetMaxWidth(it.p, e.x + e.cw - c.x)
+               it.x := c.x, it.w := e.x + e.cw - c.x
+               If !it.p                                          ; range bar: only needs its box
+                  Continue
+               D2D.SetMaxWidth(it.p, it.w)
                D2D.SetMaxHeight(it.p, rh)
                If it.al != this._align
                   D2D.SetTextAlignment(it.p, it.al)   ; the layout was created with this._align
@@ -769,6 +809,11 @@ class D2DGrid extends D2DText {
       for r, items in this._items {
          y := this._pad + (r - 1) * rh
          for it in items {
+            if !it.p {
+               this._DrawBar(rt, it, y, rh)
+               clr := -1                                         ; _DrawBar recolored the solid brush
+               continue
+            }
             want := it.c = "" ? this._fg : it.c
             if want != clr
                D2D.SetColor(this._brush, D2DText._Color(clr := want))
@@ -777,7 +822,66 @@ class D2DGrid extends D2DText {
       }
       if clr != this._fg
          D2D.SetColor(this._brush, D2DText._Color(this._fg))
-   }  
+   }
+   /**
+    * Draws one range bar cell: a faint rounded track over the cell's width, a pill from lo to hi filled with the
+    * gradient (mapped to the whole track, so colors are comparable between rows), and an optional "now" dot
+    * ringed in the background color. Leaves the solid brush recolored; _Render resets it.
+    * @param {Integer} rt ID2D1RenderTarget pointer.
+    * @param {Object} it Layout item: x, w (DIPs), bar: [lo, hi, now?], c (fallback color or "").
+    * @param {Number} y Top of the row, in DIPs.
+    * @param {Number} rh Row height, in DIPs.
+    */
+   _DrawBar(rt, it, y, rh) {
+      Static rr := D2D1_ROUNDED_RECT(), el := D2D1_ELLIPSE()
+      b := it.bar
+      lo := b[1], hi := b[2], now := b.Length >= 3 ? b[3] : ""
+      If !IsNumber(lo) || !IsNumber(hi)
+         Return
+      x0 := it.x, w := it.w
+      th := Max(3, Round(rh * 0.3)), r := th / 2                   ; bar thickness and end-cap radius
+      cy := y + rh / 2
+      span := this._barMax - this._barMin
+      X := v => x0 + (span > 0 ? Max(0, Min(1, (v - this._barMin) / span)) : 0.5) * w
+
+      ; track
+      rr.left := x0, rr.right := x0 + w, rr.top := cy - r, rr.bottom := cy + r
+      rr.radiusX := rr.radiusY := r
+      D2D.SetColor(this._brush, D2DText._Color(this._fg, 0.15))
+      D2D.FillRoundedRectangle(rt, rr, this._brush)
+
+      ; lo..hi pill, at least round (one thickness wide) and kept inside the track
+      xl := X(Min(lo, hi)), xr := X(Max(lo, hi))
+      If xr - xl < th {
+         m := Max(x0 + r, Min(x0 + w - r, (xl + xr) / 2))
+         xl := m - r, xr := m + r
+      }
+      rr.left := xl, rr.right := xr
+      If this._barStops.Length {
+         If !this._gradBrush {
+            coll := D2D.CreateGradientStopCollection(rt, this._barStops)
+            this._gradBrush := D2D.CreateLinearGradientBrush(rt, coll)
+            ObjRelease(coll)                                     ; the brush holds its own reference
+         }
+         D2D.SetStartPoint(this._gradBrush, x0, cy)
+         D2D.SetEndPoint(this._gradBrush, x0 + w, cy)
+         D2D.FillRoundedRectangle(rt, rr, this._gradBrush)
+      } Else {
+         D2D.SetColor(this._brush, D2DText._Color(it.c = "" ? this._fg : it.c))
+         D2D.FillRoundedRectangle(rt, rr, this._brush)
+      }
+
+      ; "now" dot, ringed in the background color so it stands out on the pill
+      If IsNumber(now) {
+         el.x := Max(x0 + r, Min(x0 + w - r, X(now))), el.y := cy
+         el.radiusX := el.radiusY := r + 1.5
+         D2D.SetColor(this._brush, D2DText._Color(D2DText._GuiBack(this._ctrl.Gui)))
+         D2D.FillEllipse(rt, el, this._brush)
+         el.radiusX := el.radiusY := r
+         D2D.SetColor(this._brush, D2DText._Color(0xFF0000))
+         D2D.FillEllipse(rt, el, this._brush)
+      }
+   }
 }
 ;@reference DirectWriteClass.d.ahk
 Gui.Prototype.DefineProp("AddD2DText", {Call: (g, args*) => D2DText.Create(g, args*)})
