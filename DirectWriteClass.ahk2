@@ -565,6 +565,8 @@ class D2DGrid extends D2DText {
    _justify := false, _lastW := 0, _natW := 0
    /** Range bar scale (value at the left and right end of the track), gradient colors, and the gradient brush. */
    _barMin := 0, _barMax := 1, _barStops := [], _gradBrush := 0
+   /** Range bar thickness as a fraction of the row height (see SetBarHeight). */
+   _barH := 0.4
    __New(args*) {
       super.__New(args*)
       this.SetWrap(false)
@@ -596,6 +598,14 @@ class D2DGrid extends D2DText {
          if this._gradBrush
             ObjRelease(this._gradBrush), this._gradBrush := 0   ; rebuilt with the new colors on the next paint
       }
+   }
+   /**
+    * Sets the thickness of range bar cells as a fraction of the row height (the bar is never thinner than 3 DIPs).
+    * Takes effect on the next paint.
+    * @param {Number} frac Fraction of the row height, 0..1 (default 0.4).
+    */
+   SetBarHeight(frac) {
+      this._barH := Max(0, Min(1, frac))
    }
 /** Natural width in DIPs of pad + columns + inner gaps */
    ContentW {
@@ -839,7 +849,7 @@ class D2DGrid extends D2DText {
       If !IsNumber(lo) || !IsNumber(hi)
          Return
       x0 := it.x, w := it.w
-      th := Max(3, Round(rh * 0.3)), r := th / 2                   ; bar thickness and end-cap radius
+      th := Max(3, Round(rh * this._barH)), r := th / 2                   ; bar thickness and end-cap radius
       cy := y + rh / 2
       span := this._barMax - this._barMin
       X := v => x0 + (span > 0 ? Max(0, Min(1, (v - this._barMin) / span)) : 0.5) * w

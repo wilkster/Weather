@@ -39,6 +39,7 @@ class Weather {
    Static Assets          := A_ScriptDir . "\Assets\"
    Static Model           := "auto"
    Static RangeWidth      := 80 ; DIPs (before font scaling), width of the daily low/high range bar
+   Static RangeHeight     := 0.3 ; thickness of the daily low/high range bar, as a fraction of the row height
    Static TempStops       := [0x7cacf8, 0x61cbc6, 0xf8dc80, 0xFAB387]  ; cold -> hot, for TempColor and the range bar gradient
    Static cbRefreshMe     := this.RefreshMe.Bind(this)
    Static cbUpdateData    := this.RefreshData.bind(this)
@@ -156,7 +157,9 @@ class Weather {
       99, "⛈️"         ;"Thunderstorm, hail"
    )
    /**
-    * Called during program startup
+    * Program entry point. Loads settings from the ini file, resolves the default location
+    * (prompting the user if none is set), builds the GUI and starts the first data refresh.
+    * Exits the app if no location can be set and the user declines to continue.
     */
    static Init() {
       this.Menu := Menu()
@@ -210,8 +213,8 @@ class Weather {
       Sleep(100)
    }
    /**
-    * Determine if windows thinks it is connected to the internet
-    * @returns {boolean} true if it is, false if not 
+    * Determine if Windows thinks it is connected to the internet (Network List Manager)
+    * @returns {Boolean} true if connected, false if not or if the query fails
     */
    Static hasInternet {
       get {
@@ -222,8 +225,11 @@ class Weather {
       }
    }   
    /**
-    * Build/Rebuild the GUI
-    * @returns {unset?} 
+    * Build (or rebuild) the widget GUI and all of its controls, scaled by fontScaleFactor.
+    * Any existing GUI and its D2D resources are disposed first.
+    * @param {Integer} X Screen X position for the window
+    * @param {Integer} Y Screen Y position for the window
+    * @returns {Gui} The new GUI object (also stored in Weather.Gui)
     */
    Static BuildGUI(X, Y) {
       If (this.Gui) {
@@ -281,6 +287,7 @@ class Weather {
          {al: "Left",  w: "auto", gap: fs(4)},    ; precip icon
          {al: "Right", w: "auto", gap: fs(2)},    ; wind/gust speed
          {al: "Left",  w: "auto"}])               ; Gust Icon
+      this.Ctl.daily.SetBarHeight(this.RangeHeight)
       this.Ctl.updated := this.AddTextCtl(fs("wp y+8"),,                                fs("s9")  " c7F849C", "Segoe UI")  ; overlay1
       this.ActiveIcon := ""
       this.Ctl.Icon := g.AddPicture(fs("H96 W96 X" (wid - 96 + 12) " Y0"))      ; X is width - 96
@@ -314,10 +321,11 @@ class Weather {
       Return g
 
       /**
-       * Scale all the numberic values in a string based on the current fontScaleFactor
-       * @param val Value to scale
-       * @param {Integer} r 
-       * @returns {Integer | String} 
+       * Scale a number, or the numeric values in a GUI option string (x/y/w/h with m/p/+/- prefixes,
+       * and font size s<N>), by the current fontScaleFactor.
+       * @param {Number | String} val A number, or an option string such as "w310 xm y+8" or "s11 Bold"
+       * @param {Integer} r Decimal places for rounding numbers and font sizes (positions are always whole)
+       * @returns {Number | String} The scaled number, or the option string with scaled values
        */
       fs(val, r := 1) {
          k := this.fontScaleFactor
@@ -336,9 +344,9 @@ class Weather {
 
    }
    /**
-    * Rebuild the GUI, most likely with a new scale factor
-    * @param sf New Scale factor to use
-    * @returns {unset?} 
+    * Rebuild the GUI in place with a new scale factor and refresh the data.
+    * Does nothing if sf is omitted or effectively unchanged.
+    * @param {Number} [sf] New scale factor to use
     */
    Static ReBuildGUI(sf?) {
       If (IsSet(sf)) {
@@ -351,7 +359,9 @@ class Weather {
       }
    }
    /**
-    * Call after adjusting one of the three settings that impact daily/hourly numbers below
+    * Resize the hourly and daily grids to match maxRows/forecastDays, reposition the
+    * controls below them and auto-size the window. A count of 0 collapses that grid.
+    * Call after changing maxRows, forecastDays or hourIncrement.
     */
    Static ApplyRowCounts() {
       c := this.Ctl
@@ -367,8 +377,9 @@ class Weather {
       this.Gui.Show("NoActivate AutoSize")
    }
    /**
-    * Return the approzimate moon phase unicode symbol
-    * @returns Unicode character for moon phase 
+    * Return the approximate moon phase as a Unicode symbol (one of 8 phases)
+    * @param {Number} deltaDay Days offset from now (e.g. 1 = tomorrow)
+    * @returns {String} Moon phase character 🌑🌒🌓🌔🌕🌖🌗🌘
     */
    Static MoonPhase(deltaDay:=0) {
       p := 29.530588853                                  ; synodic month, days
@@ -377,11 +388,10 @@ class Weather {
       Return Chr(0x1F311 + idx)                          ; 🌑🌒🌓🌔🌕🌖🌗🌘
    }
    /**
-    * Read the locations in the order they are in the ini file
-    * loc=... is optional
-    * Allows user to reorder as desired
-    * @param iniFile Name of ini file
-    * @param {String} section 
+    * Read the locations in the order they appear in the ini file, so the user can reorder them.
+    * Lines may be bare names or key=name (the key is ignored).
+    * @param {String} iniFile Path of the ini file
+    * @param {String} section Section holding the location list
     * @returns {Array} Location names
     */
    Static ReadLocations(iniFile, section := "Locations") {
@@ -395,37 +405,46 @@ class Weather {
       return cities
    } 
    /**
-    * Helper method to add a text control with a font, returns the control
-    * @param options size/placement options
-    * @param default initial text
-    * @param fontOpt font options (size, color, weight)
-    * @param fontName font name
-    * @returns {Gui.Text} the new control
+    * Add a transparent-background text control, optionally setting the GUI font first
+    * @param {String} options Size/placement options
+    * @param {String} [default] Initial text
+    * @param {String} [fontOpt] Font options (size, color, weight)
+    * @param {String} [fontName] Font name
+    * @returns {Gui.Text} The new control
     */
    Static AddTextCtl(options, default?, fontOpt?, fontName?) {
       if (IsSet(fontOpt) || IsSet(fontName))
          this.gui.SetFont(fontOpt ?? "", fontName ?? "")
       return this.gui.AddText(options " BackgroundTrans", default ?? "")
    }
-   ; Wrapper for AddD2DText to also set the FontSize for spacing
+   /**
+    * Wrapper for Gui.AddD2DText that first sets the GUI font, so r<N>/auto sizing matches the D2D font
+    * @param {Any*} params AddD2DText arguments: options, text, fontName, fontSize, color
+    * @returns {D2DText} The new control
+    */
    Static AddD2DTextCtl(params*) {
       this.Gui.SetFont("S" params[4], params[3])
       return this.gui.AddD2DText(params*)
    }
-   ; Wrapper for AddD2DGrid to also set the FontSize for spacing
+   /**
+    * Wrapper for Gui.AddD2DGrid that first sets the GUI font, so r<N> row sizing matches the grid font
+    * @param {Any*} params AddD2DGrid arguments: options, text, fontName, fontSize, color
+    * @returns {D2DGrid} The new grid control
+    */
    Static AddD2DGridCtl(params*) {
       this.Gui.SetFont("S" params[4], params[3])
       return this.gui.AddD2DGrid(params*)
    }
    /**
-    * Build/Rebuild/Show the RMB menu
+    * Rebuild and show the right-click context menu
     */
    Static ShowRMB() {
       this.BuildRMB()
       this.Menu.Show()
    }
    /**
-    * Rebuild the RMB menu before launching it in case the settings file changed
+    * Rebuild the right-click menu from scratch (locations, display settings, toggles),
+    * re-reading the ini file in case it was edited by hand
     */
    Static BuildRMB() {
       this.Menu.Delete()
@@ -485,23 +504,39 @@ class Weather {
       this.Menu.Add()
       this.Menu.Add("Exit", (*) => ExitApp())
       Try this.Menu.SetIcon("Exit", this.Assets "Exit.Ico")
+      /**
+       * Menu callback: toggle Always On Top and save the setting
+       */
       ToggleOnTop(*) {
          this.OnTop := !this.OnTop
          IniWrite(this.OnTop, this.iniFile, A_ComputerName, "OnTop")
          this.gui.opt(this.OnTop ? "+AlwaysOnTop" : "-AlwaysOnTop")
       }
+      /**
+       * Menu callback: toggle metric/imperial units, save the setting and refresh the data
+       */
       ToggleMKS(*) {
          this.mks := !this.mks
          IniWrite(this.mks, this.iniFile, A_ComputerName, "MKS")
          this.RefreshData()
       }
+      /**
+       * Menu callback: toggle temperature color coding, save the setting and refresh the data
+       */
       ToggleTemp(*) {
          this.ColorCodeDaily := !this.ColorCodeDaily
          IniWrite(this.ColorCodeDaily, this.iniFile, A_ComputerName, "Color Code Daily")
          this.RefreshData()
       }
    }
-   ; Build a menu for the scale factor will callback to set it
+   /**
+    * Build a submenu of scale factor choices, checking the current one.
+    * Selecting an item rebuilds the GUI at that scale and saves it to the ini file.
+    * @param {String} prop Name of the Weather property holding the current value
+    * @param {String} iniKey Ini key to save the selection under
+    * @param {Array} vals Scale factor values (as strings) to list
+    * @returns {Menu} The submenu
+    */
    static BuildSFMenu(prop, iniKey, vals) {
       sub := Menu()
       for v in vals {
@@ -510,12 +545,26 @@ class Weather {
             sub.Check(v)
       }
       return sub
+      /**
+       * Menu callback: rebuild the GUI at the chosen scale and save it
+       * @param {String} sf Selected scale factor
+       * @param {String} prop Name of the Weather property holding the value
+       * @param {String} iniKey Ini key to save the value under
+       */
       Rebuild(sf, prop, iniKey, *) {
          this.ReBuildGUI(sf)
          IniWrite(sf, this.iniFile, A_ComputerName, iniKey)
       }
    }
-   ; Builds a 1-10 submenu for the property named prop, checking the current value
+   /**
+    * Build a numeric submenu (mn..mx by inc) for a Weather property, checking the current value
+    * @param {String} prop Name of the Weather property to set
+    * @param {String} iniKey Ini key to save the selection under
+    * @param {Integer} mx Largest value listed
+    * @param {Integer} inc Step between values
+    * @param {Integer} mn Smallest value listed
+    * @returns {Menu} The submenu
+    */
    static BuildNumMenu(prop, iniKey, mx:=10, inc:=1, mn := 1) {
       sub := Menu()
       For I in Range(mn, mx, inc) {
@@ -525,6 +574,15 @@ class Weather {
       }
       return sub
    }
+   /**
+    * Menu callback for BuildNumMenu: set the property, move the check mark, save it,
+    * then resize the grids and refresh the data
+    * @param {String} prop Name of the Weather property to set
+    * @param {String} iniKey Ini key to save the value under
+    * @param {String} itemName Selected menu item text (the numeric value)
+    * @param {Integer} itemPos Menu item position (unused)
+    * @param {Menu} sub The submenu the item belongs to
+    */
    static SetNum(prop, iniKey, itemName, itemPos, sub) {
       Try sub.Uncheck(this.%prop%) ; skip if value was set not on the menu
       this.%prop% := Integer(itemName)
@@ -535,10 +593,11 @@ class Weather {
    }
    
    /**
-    * Callback when user selects a new location
-    * @param place Name of location
-    * @param ItemPos menu position
-    * @param MyMenu menu handle
+    * Switch to a new location (menu callback, also called by LocationManager).
+    * Geocodes the name, saves it as the default, re-reads display settings and refreshes the data.
+    * @param {String} userName Name of the location
+    * @param {Integer} ItemPos Menu item position (unused)
+    * @param {Menu} MyMenu Menu the item belongs to (unused)
     */
    Static SetLocation(userName, ItemPos, MyMenu) {
       If (userName != this.userName) {
@@ -568,9 +627,10 @@ class Weather {
       this.RefreshData()
    }
    /**
-    * Set the best default model to use
-    * @param obj Geocode object
-    * @returns {Any} 
+    * Pick the best forecast model for a location if it doesn't already have one
+    * (NBM CONUS for the contiguous US, otherwise "auto"). Updates both obj.Model and Weather.Model.
+    * @param {Object} obj Location object from GeocodeName
+    * @returns {String} The model name in effect for the location
     */
    Static setModel(obj) {
       If (not obj.Model) {
@@ -584,9 +644,8 @@ class Weather {
       Return obj.Model
    }
    /**
-    * Save a location object to the ini file for caching
-    * @param obj Location Object
-    * @returns {unset?} 
+    * Cache a location's geocode results in its own ini section, so later lookups skip the web query
+    * @param {Object} obj Location object from GeocodeName (userName, CC, Lat, Lon, Model, fullName)
     */
    Static cacheUserLocation(obj) {
       IniWrite(obj.CC, this.iniFile, obj.userName, "CC")
@@ -596,7 +655,10 @@ class Weather {
       IniWrite(obj.fullName, this.iniFile, obj.userName, "FullName")
    }
    /**
-    * Save Gui location on exit
+    * OnExit callback: save the window position and current location, and write any
+    * settings that are missing from the ini file so the user can find and edit them
+    * @param {String} ExitReason Reason the script is exiting
+    * @param {Integer} ExitCode Exit code
     */
    static SaveOnExit(ExitReason, ExitCode) {
       this.Gui.GetPos(&X, &Y)
@@ -609,13 +671,23 @@ class Weather {
       this.writeIfBlank(this.fontScaleFactor, A_ComputerName, "FontScaling") ;
       this.writeIfBlank(this.maxRows, A_ComputerName, "Max Rows")
    }
+   /**
+    * Write a value to the ini file only if the key doesn't already exist
+    * @param {Any} val Value to write
+    * @param {String} section Ini section
+    * @param {String} tag Ini key
+    */
    Static writeIfBlank(val, section, tag) {
       If (IniRead(this.iniFile, section, tag, "xxx") == "xxx") {
          IniWrite(val, this.iniFile, section, tag)
       }
    }
    /**
-    * Drag the GUI on a message since we don't have a caption
+    * WM_LBUTTONDOWN handler: start a window drag, since the GUI has no caption
+    * @param {Gui | Gui.Control} GuiOrCtrlObj Window or control that was clicked
+    * @param {Integer} wParam Message wParam
+    * @param {Integer} lParam Message lParam
+    * @param {Integer} msg Message number
     */
    static Drag(GuiOrCtrlObj, wParam, lParam, msg) {
       DllCall("ReleaseCapture")
@@ -623,7 +695,12 @@ class Weather {
       PostMessage(0xA1, 2, , , GuiOrCtrlObj.hWnd)   ; WM_NCLBUTTONDOWN, HTCAPTION
    }
    /**
-    * Snap the GUI so it is fully enclosed by a monitor
+    * Move the window, if needed, so it lies fully within the work area of its nearest monitor.
+    * Used as the WM_EXITSIZEMOVE handler and called directly after showing the GUI.
+    * @param {Gui} GuiOrCtrlObj Window to snap
+    * @param {Integer} wParam Message wParam (unused)
+    * @param {Integer} lParam Message lParam (unused)
+    * @param {Integer} msg Message number (unused)
     */
    Static SnapToWorkArea(GuiOrCtrlObj, wParam, lParam, msg) {
       hMon := DllCall("MonitorFromWindow", "Ptr", GuiOrCtrlObj.hwnd, "UInt", 2, "Ptr")   ; MONITOR_DEFAULTTONEAREST
@@ -648,10 +725,8 @@ class Weather {
       Return !!DllCall("MonitorFromWindow", "Ptr", hGui, "UInt", 0, "Ptr")   ; MONITOR_DEFAULTTONULL
    }   
    /**
-    * Returns true if the display is on (or dimmed), false if Windows has turned it off.
-    * The first call registers for display-state notifications using the GUI's window; until the first
-    * notification arrives (normally right after registering) the display is assumed to be on.
-    * @returns {Boolean}
+    * Determine if the workstation is locked, by checking whether the input desktop can be opened
+    * @returns {Boolean} true if locked (input desktop not accessible), false if unlocked
     */
    Static IsScreenLocked(*) {
       ; If it returns a handle, we must close it and report as unlocked.
@@ -662,8 +737,9 @@ class Weather {
       Return true
    }
    /**
-    * Refresh the weather and Air Quality data
-    * Reschedule the timer depending on result
+    * Query and render the weather and air quality data, then repaint the GUI.
+    * Skips the update (retrying in a minute) if the screen is locked, the window is off-screen
+    * or there is no internet; on success reschedules for the normal refresh interval.
     */
    Static RefreshData(*) {
       hwnd := this.Gui.Hwnd
@@ -707,7 +783,8 @@ class Weather {
       }
    }
    /**
-    * Resolve lat/lon from the location name if needed.
+    * Resolve lat/lon from the location name if not already known (NeedGeo).
+    * Shows an error in the footer if the lookup fails.
     * @returns {Boolean} true if coordinates are available, false if the lookup failed
     */
    Static EnsureGeo() {
@@ -723,9 +800,10 @@ class Weather {
 
    /**
     * GET a URL and hand the response text to a renderer.
-    * On any failure, shows the error and schedules a retry.
-    * @param url The full request URL
-    * @param renderer Callback that receives the response text
+    * On any failure, shows the error in the footer and returns false (the caller schedules the retry).
+    * @param {String} url The full request URL
+    * @param {Func} renderer Callback that receives the response text
+    * @returns {Boolean} true if the request and render both succeeded
     */
    Static Query(url, renderer) {
       try {
@@ -751,9 +829,10 @@ class Weather {
    }
 
    /**
-    * Query the JSON Air Quality data
-    * NOTE : If location is in europe (), may be better to use the europe standard of european_aqi.
-    *        Note, the color coding breakpoints would be differnt
+    * Query the Open-Meteo air quality API (current and hourly US AQI) and render it
+    * NOTE : If location is in Europe, it may be better to use the European standard european_aqi.
+    *        Note, the color coding breakpoints would be different
+    * @returns {Boolean} true on success
     */
    Static UpdateAirQuality(*) {
       If (!this.EnsureGeo())
@@ -764,7 +843,8 @@ class Weather {
    }
 
    /**
-    * Query the JSON Weather data
+    * Query the Open-Meteo forecast API (current, hourly and daily) in the selected units and model, and render it
+    * @returns {Boolean} true on success
     */
    Static UpdateWeather(*) {
       If (!this.EnsureGeo())
@@ -790,8 +870,8 @@ class Weather {
    }
 
    /**
-    * Render the US Air Quality data based on JSON data
-    * @param json Query Results
+    * Render the current US AQI and save the hourly values (keyed by time) for RenderWeather
+    * @param {String} json Air quality API response text
     */
    Static RenderAQI(json) {
       cur   := this.Section(json, "current")
@@ -811,6 +891,11 @@ class Weather {
       this.Ctl.AQI.Text := aqi
       this.Ctl.AQI.SetFont("C" this.AqiColor(aqi))
    }
+   /**
+    * Map a US AQI value to its standard category color
+    * @param {Integer | String} aqi AQI value, or "" if unknown
+    * @returns {String} RRGGBB color (white if unknown)
+    */
    Static AqiColor(aqi) {
       Return (aqi = "" || aqi < 0) ? "ffffff"
       : aqi <= 50 ? "1dd31d"
@@ -821,8 +906,8 @@ class Weather {
       : "7E0023"
    }
    /**
-    * Render the weather related text fields with updated data
-    * @param json Json text to parse
+    * Render the weather data: current conditions, hourly and daily grids, footer, condition icon and tray tip
+    * @param {String} json Forecast API response text
     */
    static RenderWeather(json) {
       cur    := this.Section(json, "current")
@@ -1030,12 +1115,23 @@ class Weather {
          }
          A_IconTip := this.userName "`n" (Round(this.Value(cur, "temperature_2m")) . "° - " . this.Codes[code])
       }
+      /**
+       * Convert a wind direction to a 16-point arrow/compass label (arrow points where the wind blows to)
+       * @param {Number | String} deg Direction the wind comes from, in degrees
+       * @returns {String} Arrow label, or "?" if deg isn't a number
+       */
       static Compass(deg) {
          if (!IsNumber(deg))
             return "?"
          return ["🡓","🡗N","🡗","🡗E","🡐","🡔E","🡔","🡔S","🡑","S🡕","🡕","W🡕","🡒","W🡖","🡖","N🡖"][Mod(Round(deg / 22.5), 16) + 1]
       }
-      ; This version is a bit more subtle
+      /**
+       * Interpolate a color for a temperature along the Weather.TempStops gradient (cold -> hot)
+       * @param {Number} v Temperature to color
+       * @param {Number} lo Temperature mapped to the first (coldest) stop
+       * @param {Number} hi Temperature mapped to the last (hottest) stop
+       * @returns {Integer} 0xRRGGBB color (the midpoint if hi <= lo)
+       */
       Static TempColor(v, lo, hi) {
        ; Static stops := ["0x74a2ec", "0x61cbc6", "0xe8ce78", "0xed837d"]
       ;  Static stops := ["0x89B4FA", "0xBAC2DE", "0xFAB387"]     ; soft blue -> pale neutral -> soft peach
@@ -1050,11 +1146,43 @@ class Weather {
          Return (r << 16) | (g << 8) | bl
       }
    }
+   /**
+    * DPI of the monitor the widget is on
+    * @returns {Integer} DPI (96 = 100%)
+    */
    Static Dpi()               => DllCall("GetDpiForWindow", "Ptr", Weather.Gui.Hwnd, "UInt")
+   /**
+    * Extract the body of a flat JSON object by name (no nested objects)
+    * @param {String} json JSON text
+    * @param {String} name Object name, e.g. "current"
+    * @returns {String} Text between the braces, or "" if not found
+    */
    static Section(json, name) => RegExMatch(json, '"' name '":\{([^}]*)\}', &m) ? m[1] : ""
+   /**
+    * Extract a numeric value from JSON text
+    * @param {String} sec JSON text (typically from Section)
+    * @param {String} key Key name
+    * @returns {String} The number as text, or "" if not found/not numeric
+    */
    static Value(sec, key)     => RegExMatch(sec, '"' key '":(-?[\d.]+)', &m) ? m[1] : ""
+   /**
+    * Extract a JSON array as raw strings (nulls stay as "null", strings keep their quotes)
+    * @param {String} sec JSON text (typically from Section)
+    * @param {String} key Key name
+    * @returns {Array} Array elements, or an empty array if not found
+    */
    static List(sec, key)      => RegExMatch(sec, '"' key '":\[([^\]]*)\]', &m) ? StrSplit(m[1], ",") : []
+   /**
+    * Format a 24-hour clock hour as 12-hour time
+    * @param {Integer} h Hour (wraps modulo 24)
+    * @returns {String} e.g. "12 AM", "3 PM"
+    */
    static Hour12(h)           => ((h := Mod(h, 24)) = 0 ? 12 : h > 12 ? h - 12 : h) (h < 12 ? " AM" : " PM")
+   /**
+    * Swap spaces and hyphens for fixed-width (figure) equivalents so numbers line up in the grids
+    * @param {String} st Text to convert
+    * @returns {String} Converted text
+    */
    static fixfix(st)          => StrReplace(StrReplace(st," "," "),"-","‒")
 
    /**
@@ -1083,12 +1211,12 @@ class Weather {
       b := (b * num + half) // den
       Return (r << 16) | (g << 8) | b
    }
-   ;----------------------------------------------------------------------------
-   ; Round the corners of the GUI for windows 11, ignored on Windows 10
-   ; Also draws a rounded border
-   ; Needed since we don't have a caption
-   ; This value is supported starting with Windows 11 Build 22000
-   ;----------------------------------------------------------------------------
+   /**
+    * Round the corners of the GUI on Windows 11 (build 22000+), ignored on Windows 10.
+    * Also draws a rounded border. Needed since we don't have a caption.
+    * @param {Integer} hWnd Window handle
+    * @param {Integer} how DWM_WINDOW_CORNER_PREFERENCE: 1 = no rounding, 2 = round, 3 = round small
+    */
    Static Round11Corners(hWnd, how := 2) {
       howRound := how
       ; round corners on windows 11, ignored by windows 10
@@ -1102,9 +1230,10 @@ class Weather {
 
    }   
    /**
-    * Give the window a drop shadow, since no caption it won't do it by default
-    * Also gives it the standard windows 11 drop shadow
-    * Doesn't work on layered windows
+    * Give the captionless window the standard Windows 11 drop shadow (and border)
+    * by enabling DWM non-client rendering and extending the frame by 1px.
+    * Doesn't work on layered windows.
+    * @param {Integer} hwnd Window handle
     */
    Static DropShadow(hwnd) {
       policy := 2   ; DWMNCRP_ENABLED
@@ -1115,7 +1244,12 @@ class Weather {
    }
 
    /**
-    * Tray message callback when icon is clicked, toggle the window visibility
+    * Tray icon message handler (0x404). Left-click shows the window and snaps it on-screen;
+    * Ctrl+left-click hides it.
+    * @param {Integer} wParam Tray icon id
+    * @param {Integer} lParam Mouse message (e.g. 0x202 = WM_LBUTTONUP)
+    * @param {Integer} uMsg Message number
+    * @param {Integer} hWnd Script window handle
     */
    Static TrayMessage(wParam, lParam, uMsg, hWnd) {
       ; debug(hex(lParam))
@@ -1135,13 +1269,23 @@ class Weather {
          Default:
       }
    }
+   /**
+    * Determine if a window has the WS_VISIBLE style
+    * @param {Integer} hwndTry Window handle
+    * @returns {Integer} Nonzero if visible
+    */
    Static IsWindowVisible(hwndTry) => DllCall("User32.dll\IsWindowVisible", "Ptr", hwndTry)
+   /**
+    * Trim this process's working set to reduce reported memory use
+    * @returns {Integer} Nonzero on success
+    */
    Static PruneMemory() => DllCall("psapi\EmptyWorkingSet", "ptr", -1)
 
    /**
-    * Return an object with the lat/long of some place
-    * @param place Name of location
-    * @returns {Integer | Object}  n.lat, n.lon, n.name
+    * Resolve a location name to coordinates, using the ini cache first and OpenStreetMap Nominatim otherwise.
+    * If userName is blank, prompts the user (pre-filled with an IP-based guess).
+    * @param {String} userName Name of the location
+    * @returns {Object | Boolean} {userName, fullName, lat, lon, CC, Model, cached}, or false on failure/cancel
     */
    Static GeocodeName(userName) {
       If (!userName) {
@@ -1180,7 +1324,12 @@ class Weather {
       RegExMatch(txt, '"display_name":"((?:[^"\\]|\\.)*)"', &mName)
       RegExMatch(txt, '"country_code":"([a-z]{2})"', &mCC)
       return {userName:userName, fullName:mName ? mName[1] : userName, lat: Round(mLat[1],7), lon: Round(mLon[1],7), CC: mCC ? mCC[1] : "", Model:Model, cached:0}
-      
+
+      /**
+       * Percent-encode a string as UTF-8 for use in a URL query (RFC 3986 unreserved chars kept)
+       * @param {String} s Text to encode
+       * @returns {String} Encoded text
+       */
       UriEncode(s) {
          n := StrPut(s, "UTF-8") - 1
          buf := Buffer(n + 1)
@@ -1198,8 +1347,8 @@ class Weather {
       }   
    }
    /**
-    * Return the closest location of local network
-    * @returns Closest location of network 
+    * Estimate the current location from the public IP address (ipwho.is)
+    * @returns {String} "City, Region, Country", or "" if the lookup fails
     */
    Static GetLocalPlaceName() {
       try {
@@ -1231,8 +1380,8 @@ class Weather {
       D2DText.RefreshAll(this.Gui)
    } 
    /**
-    * Erase-and-invalidate only the transparent native text controls; D2D controls clear themselves.
-    * Follow with RefresMe(false) to paint everything in one pass.
+    * Erase and invalidate only the transparent native text/picture controls, then repaint
+    * them in a single UPDATENOW pass. D2D controls clear themselves.
     */
    Static RefreshNative() {
       hG := this.Gui.Hwnd
@@ -1247,19 +1396,23 @@ class Weather {
       DllCall("RedrawWindow", "Ptr", hG, "Ptr", 0, "Ptr", 0, "UInt", 0x0100|0x0080)   ; one UPDATENOW pass for everything queued
    }   
    /**
-    * Update the active location name if it was renamed
-    * @param newName New location name to use
-    * @returns {unset?} 
+    * Update the active location name (and its label) after it was renamed in LocationManager
+    * @param {String} newName New location name to use
     */
    Static ChangeActiveLocationName(newName) {
       this.userName := newName
       this.Ctl.loc.Text := newName
    }
 
+   /**
+    * Path of this program's shortcut in the user's Startup folder
+    * @returns {String}
+    */
    Static StartupLink => A_Startup "\" RegExReplace(A_ScriptName, "\.[^.]+$") ".lnk"
    /**
     * True only if the startup shortcut exists and points at this EXE
     * (a stale shortcut from a moved EXE reads as disabled)
+    * @returns {Boolean}
     */
    Static StartupEnabled {
       Get {
@@ -1274,8 +1427,8 @@ class Weather {
 
    /**
     * Add or remove the startup shortcut
-    * @param enable true = create/refresh, false = delete
-    * @returns {Integer} true on success
+    * @param {Boolean} enable true = create/refresh, false = delete
+    * @returns {Boolean} true on success
     */
    Static SetStartup(enable) {
       link := this.StartupLink
@@ -1290,7 +1443,9 @@ class Weather {
    }   
 }
 /**
- * On unlock or resume from sleep or display turning on , refresh immediatly
+ * Register for session lock/unlock, suspend/resume, display power and display change
+ * notifications, pausing updates while locked/off and refreshing promptly when the user returns.
+ * Handlers are unregistered on exit.
  */
 SetupEventMonitoring() {
    Static WM_POWERBROADCAST     := 0x0218
@@ -1315,7 +1470,11 @@ SetupEventMonitoring() {
    OnExit UnRegisterHandlers
    Return
    /**
-    * Session Change lock/unlock
+    * WM_WTSSESSION_CHANGE handler: stop updates on lock, refresh shortly after unlock
+    * @param {Integer} wParam Session change event (WTS_SESSION_LOCK / WTS_SESSION_UNLOCK)
+    * @param {Integer} lParam Session id
+    * @param {Integer} msg Message number
+    * @param {Integer} hwnd Receiving window handle
     */
    cbSessionChange(wParam, lParam, msg, hwnd) {
       Static WTS_SESSION_LOCK := 0x7, WTS_SESSION_UNLOCK := 0x8
@@ -1329,7 +1488,12 @@ SetupEventMonitoring() {
       }
    }
    /**
-    * Resume from sleep
+    * WM_POWERBROADCAST handler: refresh after resume from sleep, and stop/resume updates
+    * when the console display turns off/on (GUID_CONSOLE_DISPLAY_STATE)
+    * @param {Integer} wParam Power event (PBT_*)
+    * @param {Integer} lParam Pointer to POWERBROADCAST_SETTING for PBT_POWERSETTINGCHANGE
+    * @param {Integer} Msg Message number
+    * @param {Integer} hWnd Receiving window handle
     */
    cbPowerChangeEvent(wParam, lParam, Msg, hWnd) {
       Static PBT_APMRESUMESUSPEND := 0x7, PBT_APMRESUMEAUTOMATIC := 0x12
@@ -1368,18 +1532,22 @@ SetupEventMonitoring() {
       }
    }
    /**
-    * If the monitor went off or on, just refresh the GUI
-    * wParam = new bit depth
-    * lParam is resolution (low word is width, high word is height)
+    * WM_DISPLAYCHANGE handler: refresh the data and repaint the GUI after the display settles
+    * @param {Integer} wParam New bit depth
+    * @param {Integer} lParam New resolution (low word is width, high word is height)
+    * @param {Integer} msg Message number
+    * @param {Integer} hwnd Receiving window handle
     */
    cbDisplayChange(wParam, lParam, msg, hwnd) {
       SetTimer(Weather.cbRefreshMe, -8000)   ; let the display stack settle first
       SetTimer(Weather.cbUpdateData, -2000)
       Return
    }
-   ;----------------------------------------------------------------------
-   ; On exit, unregister handlers
-   ;----------------------------------------------------------------------
+   /**
+    * OnExit callback: unregister the notifications and message handlers set up above
+    * @param {String} ExitReason Reason the script is exiting
+    * @param {Integer} ExitCode Exit code
+    */
    UnRegisterHandlers(ExitReason, ExitCode) {
       if (sessionNotificationOK)
          DllCall("Wtsapi32.dll\WTSUnRegisterSessionNotification", "ptr", A_ScriptHwnd)
@@ -1394,6 +1562,10 @@ SetupEventMonitoring() {
 }
 
 class MenuDarkMode {
+   /**
+    * Set the app's menu theme via undocumented uxtheme ordinals (SetPreferredAppMode/FlushMenuThemes)
+    * @param {Integer} mode 0 Default, 1 AllowDark (follows system), 2 ForceDark, 3 ForceLight
+    */
    static Enable(mode := 2) {   ; 0 Default, 1 AllowDark (follows system), 2 ForceDark, 3 ForceLight
       static hMod := DllCall("LoadLibrary", "Str", "uxtheme", "Ptr")
       DllCall(DllCall("GetProcAddress", "Ptr", hMod, "Ptr", 135, "Ptr"), "Int", mode)
@@ -1416,6 +1588,9 @@ class LocationManager {
    static Margin := 10
    static Gap := 5
 
+   /**
+    * Show the location manager window, creating it on first use (or re-showing it if already open)
+    */
    static Show() {
       if this.Gui {
          this.Gui.Show()
@@ -1452,6 +1627,12 @@ class LocationManager {
       g.Show("w" this.InitW " h" this.InitH)
    }
 
+   /**
+    * Lay out the controls for the given client size: list box filling the left,
+    * button column on the right, edit box and Add/Close buttons along the bottom
+    * @param {Integer} w Client width
+    * @param {Integer} h Client height
+    */
    static PlaceControls(w, h) {
       m := this.Margin, gap := this.Gap
       this.BtnUp.GetPos(, , &bw, &bh)         ; right column button size
@@ -1474,16 +1655,31 @@ class LocationManager {
       this.BtnClose.Move(closeX, rowY)
    }
 
+   /**
+    * GUI Size event: re-layout the controls unless minimized
+    * @param {Gui} gui The GUI
+    * @param {Integer} minMax -1 minimized, 1 maximized, 0 otherwise
+    * @param {Integer} w New client width
+    * @param {Integer} h New client height
+    */
    static Size(gui, minMax, w, h) {
       if minMax != -1                         ; skip minimize
          this.PlaceControls(w, h)
    }
 
+   /**
+    * Close button / Close / Escape event: destroy the window
+    */
    static Close(*) {
       this.Gui.Destroy()
       this.Gui := ""
    }
 
+   /**
+    * Read the whole ini file, reporting its encoding so it can be written back the same way
+    * @param {VarRef} enc Receives the file encoding (with -RAW appended if the file has no BOM)
+    * @returns {String} File contents, or "" if the file doesn't exist
+    */
    static ReadText(&enc) {
       enc := "UTF-16"   ; used if the file doesn't exist yet
       if !FileExist(this.IniFile)
@@ -1497,6 +1693,9 @@ class LocationManager {
       return text
    }
 
+   /**
+    * Load the location list from the ini file's Locations section into Items, dropping duplicates
+    */
    static Load() {
       this.Items := []
       dupCheck := Map()
@@ -1516,6 +1715,10 @@ class LocationManager {
       }
    }
 
+   /**
+    * Write Items back to the ini file's Locations section (creating it if missing),
+    * preserving all other sections and the original encoding
+    */
    static Save() {
       out := ""
       skipping := found := false
@@ -1543,6 +1746,10 @@ class LocationManager {
       f.Close()
    }
 
+   /**
+    * Reload the list box from Items and optionally select a row
+    * @param {Integer} sel 1-based row to select, or 0 for none
+    */
    static RefreshListBox(sel := 0) {
       this.LB.Delete()
       if this.Items.Length
@@ -1551,6 +1758,10 @@ class LocationManager {
          this.LB.Choose(sel)
    }
 
+   /**
+    * Add button: validate the location in the edit box by geocoding it, cache it and append it to the list.
+    * Rejects blanks and duplicates (case-insensitive).
+    */
    static Add(*) {
       userName := Trim(this.Edit.Value)
       if userName = ""
@@ -1576,6 +1787,9 @@ class LocationManager {
       }
    }
 
+   /**
+    * Remove button: delete the selected location from the list and remove its cached ini section
+    */
    static Remove(*) {
       i := this.LB.Value
       place := this.LB.Text
@@ -1586,12 +1800,19 @@ class LocationManager {
       this.RefreshListBox(Min(i, this.Items.Length))
       IniDelete(Weather.iniFile, place)
    }
+   /**
+    * Select button: make the selected location the active one in the widget
+    */
    static Select(*) {
       i := this.LB.Value
       if !i
          return
       Weather.SetLocation(this.Items[i],"","")
    }
+   /**
+    * Rename button: prompt for a new name and rename the location everywhere in the ini file
+    * (its own section, the Locations list and any Loc= entries), updating the widget if it is active
+    */
    static Rename(*) {
       i := this.LB.Value
       if !i
@@ -1635,6 +1856,10 @@ class LocationManager {
       this.Items[i] := newName
       this.RefreshListBox(i)
    }
+   /**
+    * Move Up/Down buttons: swap the selected location with its neighbor and save
+    * @param {Integer} dir -1 to move up, 1 to move down
+    */
    static Move(dir, *) {
       i := this.LB.Value
       j := i + dir
@@ -1647,6 +1872,13 @@ class LocationManager {
       this.RefreshListBox(j)
    }
 }
+/**
+ * Inclusive numeric range enumerator for use in a for loop, e.g. `for i in Range(0, 15, 5)`
+ * @param {Number} Start First value
+ * @param {Number} Stop Last value (inclusive)
+ * @param {Number} Step Increment (may be negative)
+ * @returns {Func} Enumerator function
+ */
 Range(Start, Stop, Step := 1) => (&n) => (n := Start, Start += Step, Step > 0 ? n <= Stop : n >= Stop)
 
 ; Start things up here
