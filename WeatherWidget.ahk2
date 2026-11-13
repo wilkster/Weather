@@ -1,7 +1,7 @@
 ;@Ahk2Exe-SetName Weather
 ;@Ahk2Exe-SetDescription Weather App
 ;@Ahk2Exe-Set Comments, Weather
-;@Ahk2Exe-SetVersion 2026.10.12
+;@Ahk2Exe-SetVersion 2026.11.11
 ;@Ahk2Exe-SetCopyright Copyright (c) 2026 Tom Wilkason
 ;@Ahk2Exe-SetOrigFilename Weather.exe
 ;@Ahk2Exe-SetMainIcon Partly Cloudy.ico
@@ -1366,8 +1366,8 @@ SetupEventMonitoring() {
       Static PBT_POWERSETTINGCHANGE := 0x8013
       Switch wParam {
          Case PBT_APMRESUMESUSPEND, PBT_APMRESUMEAUTOMATIC:
-            SetTimer(Weather.cbUpdateData, -5000)
-            SetTimer(Weather.cbRefreshMe, -8000)   ; let the display stack settle first
+            SetTimer(Weather.cbUpdateData, -15000)
+            SetTimer(Weather.cbRefreshMe, -5000)   ; let the display stack settle first
             OutputDebug("WeatherWidget: Resume from Standby")
          Case PBT_POWERSETTINGCHANGE: ; Monitor power times out
             if ((A_TickCount - Weather.Launched) < 5000)
@@ -1387,7 +1387,7 @@ SetupEventMonitoring() {
             Switch state {
                Case 1 : ; Monitor power on
                   SetTimer(Weather.cbRefreshMe, -2000)   ; let the display stack settle first
-                  SetTimer(Weather.cbUpdateData, -4000)
+                  SetTimer(Weather.cbUpdateData, -6000)
                   OutputDebug("WeatherWidget: Monitor Power Coming back on")
                Case 0 : ; Monitor power off, prevent updates
                   SetTimer(Weather.cbUpdateData, 0)
