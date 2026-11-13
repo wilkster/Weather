@@ -369,7 +369,7 @@ class D2DText {
 
       rtp := D2D1_RENDER_TARGET_PROPERTIES()
       rtp.dpiX := rtp.dpiY := this._dpi
-
+      rtp.renderType := 1   ; D2D1_RENDER_TARGET_TYPE_SOFTWARE
       hp := D2D1_HWND_RENDER_TARGET_PROPERTIES()
       hp.hwnd := this._ctrl.Hwnd
       hp.pixelSize.width := w
