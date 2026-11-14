@@ -1065,11 +1065,11 @@ class Weather {
             ; NBM can report snowfall with 0.0 liquid precipitation, so snow wins in that case
             snowWE := this.mks ? ssum : ssum / 10 ; assumes 10:1 snow-to-water, as mm / in of water
             If (ssum > 0 && (psum < 0.01 || snowWE >= psum * 0.5))
-               pVal := Round(ssum, rnd), pUnit := this.mks ? "㎝" : '"', pIcon := "❄"
+               pVal := Round(ssum, rnd), pUnit := this.mks ? "㎝" : '"', pIcon := "❄", clr := tc
             Else If (psum >= 0.01)
-               pVal := Round(psum, rnd), pUnit := this.mks ? "㎜" : '"', pIcon := "💧"
+               pVal := Round(psum, rnd), pUnit := this.mks ? "㎜" : '"', pIcon := "💧", clr := tc
             Else
-               pVal := Round(0, rnd), pUnit := this.mks ? "㎜" : '"', pIcon := ""
+               pVal := Round(0, rnd), pUnit := this.mks ? "㎜" : '"', pIcon := "", clr := tcdim
                
             gusting := g >= w + (this.mks ? 8 : 5) ? true : false
 
@@ -1079,7 +1079,7 @@ class Weather {
                , { bar: i == 1 ? [lows[i], highs[i], tf] : [lows[i], highs[i]] }
                , { t: this.fixfix(highs[i] "°"), c: cc ? TempColor(highs[i], hiMin, hiMax) : tc }
                , this.emoji.get(Integer(codes[i]), "🌈")
-               , pVal
+               , { t: pVal, c: clr }
                , pUnit
                , pIcon
                , gusting ? Round(g, 0) : Round(w, 0)
