@@ -11,14 +11,14 @@ if (pid := ProcessExist(exe)) {
    DetectHiddenWindows(true)
    WinClose("ahk_class AutoHotkey ahk_pid " pid)   ; WM_CLOSE to main window, runs OnExit
    if !ProcessWaitClose(pid, 10)                    ; 0 = timed out
-      ProcessClose(pid)                             ; fall back to force kill
+      ProcessClose(pid)                             ; fall back to force kill /icon "Assets/Partly Cloudy.png"
 }
 
-RunWait('"C:\Apps\AHK\V2\Ahk2Exe.exe" /in "WeatherWidget.ahk2" /icon "Assets/Partly Cloudy.ico" /base "C:\Apps\AHK\V2\AutoHotkey64.exe" /out "' exe '"')
+RunWait('"C:\Apps\AHK\V2\Ahk2Exe.exe" /in "WeatherWidget.ahk2" /icon "TrayIcon.ico" /base "C:\Apps\AHK\V2\AutoHotkey64.exe" /out "' exe '"')
 
 if FileExist(zip)
    FileDelete(zip)
-RunWait('7z a -tzip "' zip '" "' exe '" "Assets/*.ico"',, "Hide")
+RunWait('7z a -tzip "' zip '" "' exe '" "Assets/*.ico" "Assets/*.png"',, "Hide")
 
 Sleep(200)
 if wasRunning
