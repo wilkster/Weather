@@ -4,7 +4,7 @@
 ;@Ahk2Exe-SetVersion 2026.11.11
 ;@Ahk2Exe-SetCopyright Copyright (c) 2026 Tom Wilkason
 ;@Ahk2Exe-SetOrigFilename Weather.exe
-;@Ahk2Exe-SetMainIcon Partly Cloudy.ico
+;@Ahk2Exe-SetMainIcon TrayIcon.ico
 ;@Ahk2Exe-AddResource WeatherWidget.manifest
 #SingleInstance Off
 #Requires AutoHotkey v2.1-
@@ -1096,10 +1096,10 @@ class Weather {
       ; Condition ICON
       ;-----------------------------------------------------------------------
       If (this.Icons.has(code)) {
-         Icon := this.Assets . this.Icons[code] . ".ico"
+         Icon := this.Assets . this.Icons[code] . ".png"
          ; Night time has some adjustments
          If (NOT isDay) {
-            AltIcon := this.Assets . "Night " . this.Icons[code] . ".ico"
+            AltIcon := this.Assets . "Night " . this.Icons[code] . ".png"
             if (FileExist(AltIcon))
                Icon := AltIcon
          }
