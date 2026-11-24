@@ -126,11 +126,11 @@ Duplicate names are rejected. Coordinates are cached in the INI file, so switchi
 
 ### Icon files (optional but highly recommended)
 
-Place `.ico` files in the script Assets folder. The tray icon and the picture in the widget corner are chosen by condition name:
+Place `.png` files in the script Assets folder. The tray icon and the picture in the widget corner are chosen by condition name:
 
 `Clear`, `Light Clouds`, `Partly Cloudy`, `Overcast`, `Fog`, `Drizzle`, `Freezing drizzle`, `Light Showers`, `Rain`, `Freezing rain`, `Light Snow`, `Snow`, `Heavy Snow`, `Thunderstorm`
 
-At night, the widget first looks for the same name prefixed with `Night` (e.g. `Night Clear.ico`) and falls back to the daytime icon. Missing icons are skipped without error.
+At night, the widget first looks for the same name prefixed with `Night` (e.g. `Night Clear.png`) and falls back to the daytime icon. Missing icons are skipped without error.
 
 ---
 
@@ -139,7 +139,7 @@ At night, the widget first looks for the same name prefixed with `Night` (e.g. `
 1. Place `WeatherWidget.ahk2`, `DirectWriteClass.ahk2`, and the icon files in one folder along with the `ICO` files.
 2. You can run `WeatherWidget.ahk2` directly with AutoHotkey v2.1+ (change the file extension if needed for your setup)
 
-To produce a standalone `Weather.exe`, compile with Ahk2Exe. The script's `;@Ahk2Exe-` directives already set the name, version, copyright, and main icon (`Partly Cloudy.ico`).
+To produce a standalone `Weather.exe`, compile with Ahk2Exe. The script's `;@Ahk2Exe-` directives already set the name, version, copyright, and main icon (`Partly Cloudy.png`).
 
 ---
 

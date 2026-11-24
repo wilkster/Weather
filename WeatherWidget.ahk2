@@ -290,7 +290,7 @@ class Weather {
       this.Ctl.daily.SetBarHeight(this.RangeHeight)
       this.Ctl.updated := this.AddTextCtl(fs("wp y+8"),,                                fs("s9")  " c7F849C", "Segoe UI")  ; overlay1
       this.ActiveIcon := ""
-      this.Ctl.Icon := g.AddPicture(fs("H96 W96 X" (wid - 96 + 12) " Y" g.MarginY))      ; X is width - 96
+      this.Ctl.Icon := g.AddPicture(fs("H96 W96 X" (wid - 96 + 12) " Y" g.MarginY/2))      ; X is width - 96
       if (this.dpi() > 96)
          this.DropShadow(g.hWnd) ; also border
       else
